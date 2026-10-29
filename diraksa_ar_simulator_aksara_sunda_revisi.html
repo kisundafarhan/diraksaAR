@@ -1,0 +1,1921 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DIRAKSA AR — Lab Maya Simulator Nulis Aksara Sunda</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Sundanese:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
+
+  <style>
+    :root {
+      --bg: #0a0b0f;
+      --panel: rgba(20, 21, 27, 0.72);
+      --line: rgba(255, 255, 255, 0.09);
+      --text: #f4f4f5;
+      --mute: #a1a1aa;
+      --accent: #fbbf24;
+      --ok: #34d399;
+      --bad: #fb7185;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .sunda { font-family: 'Noto Sans Sundanese', sans-serif; }
+    .hide { display: none !important; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 99px; }
+
+    /* ---------- Latar kamera ---------- */
+    #bg { position: fixed; inset: 0; z-index: 0; background: var(--bg); pointer-events: none; }
+    #camera-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); opacity: .22; transition: opacity .4s; }
+    body[data-screen="LAB"] #camera-video { opacity: .42; }
+    .bg-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10,11,15,.82), rgba(10,11,15,.55) 45%, rgba(10,11,15,.9)); }
+    #hud-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+    /* ---------- Kursor telunjuk ---------- */
+    #finger-cursor { position: fixed; z-index: 70; width: 46px; height: 46px; margin: -23px 0 0 -23px; pointer-events: none; }
+    .cur-ring {
+      position: absolute; inset: 0; border-radius: 50%;
+      background: conic-gradient(var(--accent) calc(var(--cp, 0) * 1%), rgba(255,255,255,.2) 0);
+      -webkit-mask: radial-gradient(circle, transparent 16px, #000 17px);
+              mask: radial-gradient(circle, transparent 16px, #000 17px);
+    }
+    .cur-dot { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 18px rgba(251,191,36,.85); }
+
+    /* ---------- Layar ---------- */
+    .screen { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; }
+    .bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .9rem 1.4rem; }
+    .brand { display: flex; align-items: center; gap: .7rem; }
+    .brand-mark { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: rgba(251,191,36,.12); border: 1px solid rgba(251,191,36,.3); color: var(--accent); font-size: 1.3rem; }
+    .brand-name { font-weight: 800; letter-spacing: .02em; }
+    .brand-sub { font-size: .72rem; color: var(--mute); }
+
+    .status { display: inline-flex; align-items: center; gap: .5rem; padding: .4rem .85rem; border-radius: 99px; font-size: .75rem; color: var(--mute); background: rgba(255,255,255,.05); border: 1px solid var(--line); }
+    .cam-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+    .cam-dot.dot-ok { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+    .cam-dot.dot-off { background: #71717a; }
+
+    /* ---------- Komponen ---------- */
+    [data-g] { position: relative; overflow: hidden; }
+    [data-g]::after { content: ''; position: absolute; left: 0; bottom: 0; height: 4px; width: calc(var(--gp, 0) * 1%); background: var(--accent); border-radius: 0 4px 4px 0; pointer-events: none; }
+    .g-hot { box-shadow: 0 0 0 2px var(--accent), 0 0 26px rgba(251,191,36,.22); }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 46px; padding: 0 1.15rem; border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--text); font: 600 .875rem 'Plus Jakarta Sans', sans-serif; cursor: pointer; transition: background .15s, transform .15s, box-shadow .15s; }
+    .btn:hover { background: rgba(255,255,255,.11); }
+    .btn:active { transform: scale(.98); }
+    .btn svg { width: 18px; height: 18px; flex: none; }
+    .btn-primary { background: var(--accent); border-color: transparent; color: #17171b; }
+    .btn-primary:hover { background: #fcd34d; }
+    .btn-primary[data-g]::after, .seg button.on::after { background: #17171b; }
+    .btn-icon { width: 46px; padding: 0; }
+    .btn-ok { background: rgba(52,211,153,.15); border-color: rgba(52,211,153,.35); color: #6ee7b7; }
+    .btn-danger { background: rgba(251,113,133,.14); border-color: rgba(251,113,133,.32); color: #fda4af; }
+    .btn-lg { min-height: 60px; padding: 0 1.8rem; font-size: 1rem; border-radius: 18px; }
+
+    .glass { background: var(--panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 22px; }
+    .chip { display: inline-flex; align-items: center; gap: .4rem; padding: .35rem .85rem; border-radius: 99px; background: rgba(255,255,255,.06); border: 1px solid var(--line); font-size: .8rem; color: var(--mute); }
+    .chip-accent { color: var(--accent); background: rgba(251,191,36,.08); border-color: rgba(251,191,36,.3); font-weight: 600; }
+    .eyebrow { font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+    .hint { font-size: .85rem; color: var(--mute); text-align: center; }
+
+    .seg { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; padding: 4px; border-radius: 18px; background: rgba(18,19,25,.8); backdrop-filter: blur(14px); border: 1px solid var(--line); }
+    .seg button { display: inline-flex; align-items: center; gap: .45rem; min-height: 44px; padding: 0 .95rem; border: 0; border-radius: 14px; background: transparent; color: var(--mute); font: 600 .8rem/1 'Plus Jakarta Sans', sans-serif; cursor: pointer; transition: background .15s, color .15s; }
+    .seg button:hover { color: var(--text); background: rgba(255,255,255,.06); }
+    .seg button.on { background: var(--accent); color: #17171b; }
+    .seg button svg { width: 16px; height: 16px; }
+    .tools { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 18px; background: rgba(18,19,25,.8); backdrop-filter: blur(14px); border: 1px solid var(--line); }
+    .tools .btn { border-color: transparent; background: transparent; min-height: 44px; }
+    .tools .btn:hover { background: rgba(255,255,255,.08); }
+    .tools .btn-primary { background: var(--accent); }
+    .tools .off { color: #71717a; }
+
+    /* ---------- Splash ---------- */
+    .title { font-size: clamp(3rem, 9vw, 5.8rem); font-weight: 800; letter-spacing: -.02em; line-height: 1; background: linear-gradient(180deg, #fff7d6, #fbbf24); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .deco { position: absolute; color: rgba(251,191,36,.07); pointer-events: none; font-size: 15rem; line-height: 1; }
+
+    /* ---------- Lab ---------- */
+    #lab-main { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 1rem; overflow-y: auto; }
+    .view { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; max-width: 960px; gap: .85rem; }
+    #lab-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .6rem; padding: .5rem 1rem 1rem; }
+
+    /* Simulasi */
+    .sim-stage { position: relative; width: min(92vw, calc(min(50vh, 440px) * 1.3333)); aspect-ratio: 4 / 3; border-radius: 26px; overflow: hidden; background: rgba(10,11,15,.62); border: 1px solid rgba(251,191,36,.28); box-shadow: 0 20px 60px rgba(0,0,0,.45); }
+    .sim-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #sim-trace-canvas { cursor: crosshair; }
+    .progress-wrap { display: flex; align-items: center; gap: .7rem; width: min(92vw, calc(min(50vh, 440px) * 1.3333)); font-size: .8rem; color: var(--mute); }
+    .progress { flex: 1; height: 6px; border-radius: 99px; background: rgba(255,255,255,.1); overflow: hidden; }
+    #sim-bar-isi { height: 100%; width: 0; background: linear-gradient(90deg, #f59e0b, #fde68a); transition: width .15s; }
+    .result { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .65rem; padding: 1.2rem; text-align: center; background: rgba(10,11,15,.93); backdrop-filter: blur(10px); }
+    .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; width: 100%; max-width: 360px; }
+    .stat { padding: .6rem; border-radius: 14px; background: rgba(255,255,255,.05); border: 1px solid var(--line); }
+    .stat small { display: block; font-size: .62rem; letter-spacing: .1em; color: var(--mute); }
+    .stat b { font-size: 1.15rem; }
+
+    /* Latihan */
+    .stats { display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem 1rem; font-size: .8rem; color: var(--mute); }
+    .stats b { color: var(--text); font-weight: 700; }
+    .quiz-card { width: 100%; max-width: 720px; text-align: center; padding: 1rem 1.5rem 1.2rem; }
+    #quiz-display-char { display: block; margin-top: .4rem; font-weight: 700; color: #fde68a; line-height: 1.15; }
+    .opt-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .75rem; width: 100%; max-width: 720px; }
+    @media (max-width: 560px) { .opt-grid { grid-template-columns: 1fr; } }
+    .opt { display: flex; align-items: center; gap: .9rem; min-height: 78px; padding: 0 1.2rem; border-radius: 20px; border: 1px solid var(--line); background: rgba(20,21,27,.8); backdrop-filter: blur(12px); color: var(--text); text-align: left; cursor: pointer; transition: background .15s, border-color .15s; }
+    .opt:hover:not(:disabled) { border-color: rgba(251,191,36,.55); background: rgba(251,191,36,.08); }
+    .opt:disabled { cursor: default; }
+    .opt-key { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex: none; font-size: .78rem; font-weight: 700; color: var(--accent); background: rgba(255,255,255,.06); }
+    .opt-text { font-size: 1.9rem; font-weight: 600; }
+    .opt-ok { border-color: var(--ok); background: rgba(52,211,153,.14); }
+    .opt-bad { border-color: var(--bad); background: rgba(251,113,133,.14); }
+    .feedback { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .8rem; width: 100%; max-width: 720px; padding: .9rem 1.1rem; border-radius: 20px; border: 1px solid; text-align: left; }
+    .fb-ok { background: rgba(52,211,153,.12); border-color: rgba(52,211,153,.5); }
+    .fb-bad { background: rgba(251,113,133,.12); border-color: rgba(251,113,133,.5); }
+
+    /* Rarangkén */
+    .rr-grid { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: .8rem; width: 100%; max-width: 960px; align-items: stretch; }
+    @media (max-width: 760px) { .rr-grid { grid-template-columns: 1fr; } }
+    .rr-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .35rem; padding: 1rem; text-align: center; }
+    .rr-row { display: flex; align-items: center; gap: .7rem; }
+    .rr-char { font-weight: 700; line-height: 1.15; color: #fde68a; }
+    .rr-main { background: linear-gradient(180deg, rgba(251,191,36,.12), rgba(20,21,27,.75)); border-color: rgba(251,191,36,.4); }
+
+    /* Modal */
+    .modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgba(5,6,8,.8); backdrop-filter: blur(10px); }
+    .modal-card { width: 100%; max-width: 640px; max-height: 88vh; overflow-y: auto; background: #101116; border: 1px solid var(--line); border-radius: 26px; padding: 1.5rem; box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+
+    #toast-box { position: fixed; top: 72px; left: 50%; transform: translateX(-50%); z-index: 80; max-width: 90vw; padding: .65rem 1.2rem; border-radius: 14px; background: rgba(24,24,30,.96); border: 1px solid rgba(251,191,36,.4); font-size: .85rem; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+
+    table { border-collapse: collapse; }
+  </style>
+</head>
+<body data-screen="SPLASH">
+
+  <!-- Latar kamera + kanvas tangan (dipakai splash & lab) -->
+  <div id="bg" aria-hidden="true">
+    <video id="camera-video" playsinline muted autoplay></video>
+    <div class="bg-shade"></div>
+    <canvas id="hud-canvas"></canvas>
+  </div>
+
+  <!-- Kursor telunjuk -->
+  <div id="finger-cursor" class="hide"><div class="cur-ring"></div><div class="cur-dot"></div></div>
+
+  <div id="toast-box" class="hide"><span id="toast-text"></span></div>
+
+  <!-- =====================================================================
+       1. SPLASH
+       ===================================================================== -->
+  <section id="splash-screen" class="screen" style="justify-content: space-between; overflow: hidden;">
+    <span class="deco sunda" style="top: 4%; left: 6%;">ᮊ</span>
+    <span class="deco sunda" style="bottom: 2%; right: 7%;">ᮞ</span>
+
+    <header class="bar" style="position: relative;">
+      <div class="brand">
+        <div class="brand-mark sunda">ᮓᮤ</div>
+        <div>
+          <div class="brand-name">DIRAKSA AR</div>
+          <div class="brand-sub">Bahasa Sunda · SMA/MA Fase E</div>
+        </div>
+      </div>
+      <div class="status"><span class="cam-dot"></span><span class="cam-label">Menyiapkan kamera…</span></div>
+    </header>
+
+    <main style="position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 1.5rem;">
+      <div class="eyebrow">Media Pembelajaran Interaktif</div>
+      <h1 class="title" style="margin-top: .8rem;">DIRAKSA AR</h1>
+      <p style="margin-top: .7rem; font-size: clamp(1.05rem, 2.4vw, 1.5rem); font-weight: 600; color: #e4e4e7;">Lab Maya Simulator Nulis Aksara Sunda</p>
+      <p style="margin-top: .5rem; font-style: italic; color: var(--accent);">“Ditulis ku Curuk, Lain ku Mouse.”</p>
+
+      <div style="margin-top: 1.4rem; display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem;">
+        <span class="chip">Swara</span><span class="chip">Ngalagena</span><span class="chip">Angka</span><span class="chip">Rarangkén</span><span class="chip">LKPD Digital</span>
+      </div>
+
+      <div id="splash-actions" style="margin-top: 2.4rem; display: flex; flex-wrap: wrap; justify-content: center; gap: .8rem;">
+        <button id="btn-start-lab" data-g="start" data-dwell="1100" class="btn btn-primary btn-lg">
+          <i data-lucide="camera"></i><span>MULAI LAB</span><i data-lucide="arrow-right"></i>
+        </button>
+        <button id="btn-splash-guide" data-g="splash-guide" class="btn btn-lg">
+          <i data-lucide="help-circle"></i><span>PANDUAN</span>
+        </button>
+        <button id="btn-splash-about" data-g="splash-about" class="btn btn-lg">
+          <i data-lucide="info"></i><span>TENTANG</span>
+        </button>
+      </div>
+      <p class="hint" style="margin-top: 1.2rem;">Angkat telunjuk, arahkan kursor emas ke tombol, lalu tahan sejenak untuk memilih.</p>
+    </main>
+
+    <footer style="position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; padding: .9rem 1.4rem; font-size: .75rem; color: var(--mute);">
+      <span>Pemrosesan kamera 100% lokal di perangkat Anda.</span>
+      <span>Dikembangkan oleh <b style="color: var(--accent); font-weight: 600;">Farhan Mustaqim</b></span>
+    </footer>
+  </section>
+
+  <!-- =====================================================================
+       2. LAB
+       ===================================================================== -->
+  <section id="lab-screen" class="screen hide">
+    <header class="bar">
+      <div class="brand">
+        <div class="brand-mark sunda">ᮓᮤ</div>
+        <div>
+          <div class="brand-name">DIRAKSA AR</div>
+          <div class="brand-sub">Ditulis ku Curuk, Lain ku Mouse</div>
+        </div>
+      </div>
+      <div class="status"><span class="cam-dot"></span><span class="cam-label">Menyiapkan kamera…</span></div>
+    </header>
+
+    <div id="camera-error-banner" class="hide glass" style="align-self: center; display: flex; align-items: center; gap: .8rem; max-width: 640px; margin: 0 1rem; padding: .55rem .6rem .55rem 1rem; font-size: .8rem; color: #fde68a;">
+      <i data-lucide="alert-triangle" style="width:18px;height:18px;flex:none;"></i>
+      <span id="camera-error-text"></span>
+      <button id="btn-error-guide" data-g="err-guide" class="btn" style="min-height:38px;">Solusi</button>
+    </div>
+
+    <main id="lab-main">
+
+      <!-- MODE 1: SIMULASI -->
+      <div id="view-simulasi" class="view">
+        <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem;">
+          <span id="sim-item-name" class="chip">Ngalagena Ka</span>
+          <span id="sim-item-latin" class="chip chip-accent">Bunyi “ka”</span>
+          <span id="sim-item-time" class="chip">0d</span>
+        </div>
+
+        <div class="sim-stage">
+          <canvas id="sim-guide-canvas" style="pointer-events: none;"></canvas>
+          <canvas id="sim-trace-canvas"></canvas>
+
+          <!-- Hasil: hanya muncul setelah SELURUH aksara ditelusuri -->
+          <div id="sim-result-overlay" class="result hide">
+            <div style="width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:rgba(52,211,153,.15);border:1px solid var(--ok);">
+              <i data-lucide="check" style="width:28px;height:28px;color:var(--ok);"></i>
+            </div>
+            <h2 style="font-size:1.9rem;font-weight:800;letter-spacing:.06em;color:var(--ok);">LERES!</h2>
+            <p style="font-size:.85rem;color:#d4d4d8;">Aksara <span id="sim-res-char" class="sunda" style="font-size:1.4rem;color:var(--accent);font-weight:700;margin:0 .2rem;">ᮊ</span> (<span id="sim-res-latin">ka</span>) parantos ditelusuri.</p>
+            <div class="stat-grid">
+              <div class="stat"><small>ISI</small><b id="sim-res-isi" style="color:var(--accent);">100%</b></div>
+              <div class="stat"><small>RAPI</small><b id="sim-res-rapi" style="color:var(--ok);">90%</b></div>
+              <div class="stat"><small>WAKTU</small><b id="sim-res-time">5d</b></div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:.6rem;margin-top:.4rem;">
+              <button id="btn-sim-retry" data-g="sim-retry" class="btn"><i data-lucide="rotate-ccw"></i><span>Ulangi</span></button>
+              <button id="btn-sim-next-overlay" data-g="sim-next" class="btn btn-primary"><span>AKSARA SALANJUTNA</span><i data-lucide="arrow-right"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="progress-wrap">
+          <span>Telusuri</span>
+          <div class="progress"><div id="sim-bar-isi"></div></div>
+          <span id="sim-bar-isi-label" style="min-width:2.6em;text-align:right;color:var(--text);font-weight:700;">0%</span>
+        </div>
+        <p class="hint">“Acungkeun curuk tuluy telusur wangun aksara nu caang.”</p>
+      </div>
+
+      <!-- MODE 2: LATIHAN -->
+      <div id="view-latihan" class="view hide">
+        <div class="stats">
+          <span>Soal <b id="quiz-stat-answered">0/0</b></span>
+          <span style="color:var(--ok);">Benar <b id="quiz-stat-correct" style="color:var(--ok);">0</b></span>
+          <span style="color:var(--bad);">Salah <b id="quiz-stat-wrong" style="color:var(--bad);">0</b></span>
+          <span>Skor <b id="quiz-stat-score">0</b></span>
+          <span>Akurasi <b id="quiz-stat-accuracy">0%</b></span>
+          <span>Waktu <b id="quiz-stat-time">0d</b></span>
+        </div>
+
+        <div id="quiz-active-container" style="width:100%;display:flex;flex-direction:column;align-items:center;gap:.8rem;">
+          <div class="glass quiz-card">
+            <span id="quiz-header-meta" class="eyebrow"></span>
+            <p id="quiz-prompt-text" style="margin-top:.3rem;font-size:.95rem;color:#e4e4e7;"></p>
+            <span id="quiz-display-char" class="sunda" style="font-size:clamp(3.6rem,11vh,6rem);">ᮊ</span>
+          </div>
+
+          <div id="quiz-options-grid" class="opt-grid"></div>
+
+          <div id="quiz-feedback-box" class="feedback hide">
+            <div>
+              <div id="quiz-feedback-title" style="font-weight:800;letter-spacing:.04em;"></div>
+              <div id="quiz-feedback-desc" style="font-size:.8rem;opacity:.9;margin-top:.15rem;"></div>
+            </div>
+            <button id="btn-quiz-next-question" data-g="quiz-next" class="btn btn-primary" style="min-height:52px;">
+              <span>Soal Salajengna</span><i data-lucide="arrow-right"></i>
+            </button>
+          </div>
+
+          <p id="quiz-instruction-pill" class="hint">“Antebkeun curuk kana jawaban anu bener.” Tahan sejenak untuk memilih.</p>
+        </div>
+
+        <div id="quiz-finished-container" class="glass hide" style="width:100%;max-width:520px;padding:1.6rem;text-align:center;">
+          <i data-lucide="award" style="width:44px;height:44px;color:var(--accent);margin:0 auto .4rem;"></i>
+          <h2 style="font-size:1.5rem;font-weight:800;color:var(--accent);">Sesi Latihan Rampung!</h2>
+          <p style="font-size:.85rem;color:#d4d4d8;margin-top:.3rem;">Seluruh hasil latihan tercatat otomatis ke laporan LKPD.</p>
+          <div class="stat-grid" style="margin:1rem auto;">
+            <div class="stat"><small>TERJAWAB</small><b id="quiz-end-answered" style="color:var(--accent);">0</b></div>
+            <div class="stat"><small>BENAR / SALAH</small><b id="quiz-end-ratio" style="color:var(--ok);">0 / 0</b></div>
+            <div class="stat"><small>AKURASI</small><b id="quiz-end-accuracy" style="color:var(--accent);">0%</b></div>
+          </div>
+          <div id="quiz-end-recommend" style="padding:.8rem 1rem;border-radius:14px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);font-size:.8rem;color:#fde68a;text-align:left;margin-bottom:1rem;"></div>
+          <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:.6rem;">
+            <button id="btn-quiz-restart" data-g="quiz-restart" class="btn"><i data-lucide="rotate-ccw"></i><span>Latihan Deui</span></button>
+            <button id="btn-quiz-open-lkpd" data-g="quiz-lkpd" class="btn btn-primary"><i data-lucide="file-spreadsheet"></i><span>Buka Laporan LKPD</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- MODE 3: RARANGKEN -->
+      <div id="view-rarangken" class="view hide">
+        <div id="rr-gesture-badge" class="chip chip-accent hide"><span id="rr-gesture-text"></span></div>
+
+        <div class="rr-grid">
+          <div class="glass rr-card">
+            <span class="eyebrow">1 · Aksara Dasar</span>
+            <div class="rr-row">
+              <button id="btn-rr-base-prev" data-g="rr-base-prev" class="btn btn-icon" title="Aksara Dasar Sebelumnya"><i data-lucide="chevron-left"></i></button>
+              <span id="rr-base-char" class="sunda rr-char" style="font-size:clamp(3.4rem,10vh,5.2rem);">ᮊ</span>
+              <button id="btn-rr-base-next" data-g="rr-base-next" class="btn btn-icon" title="Aksara Dasar Berikutnya"><i data-lucide="chevron-right"></i></button>
+            </div>
+            <div id="rr-base-name" style="font-weight:700;">Ngalagena Ka</div>
+            <div id="rr-base-latin" style="font-size:.8rem;color:var(--accent);">Bunyi Awal: "ka"</div>
+          </div>
+
+          <div class="glass rr-card rr-main">
+            <span class="eyebrow">Hasil Kombinasi</span>
+            <div id="rr-combined-char" class="sunda rr-char" style="font-size:clamp(4.4rem,14vh,7.4rem);color:#fff7d6;">ᮊᮤ</div>
+            <div id="rr-sound-change" style="padding:.3rem 1rem;border-radius:99px;background:var(--accent);color:#17171b;font-weight:800;">ka → ki</div>
+            <div id="rr-formula-text" class="sunda" style="font-size:.8rem;color:var(--mute);margin-top:.2rem;">ᮊ + ◌ᮤ = ᮊᮤ</div>
+          </div>
+
+          <div class="glass rr-card">
+            <span class="eyebrow">2 · Rarangkén</span>
+            <div class="rr-row">
+              <button id="btn-rr-mark-prev" data-g="rr-mark-prev" class="btn btn-icon" title="Rarangkén Sebelumnya"><i data-lucide="chevron-up"></i></button>
+              <span id="rr-mark-char" class="sunda rr-char" style="font-size:clamp(3rem,9vh,4.6rem);color:var(--accent);">◌ᮤ</span>
+              <button id="btn-rr-mark-next" data-g="rr-mark-next" class="btn btn-icon" title="Rarangkén Berikutnya"><i data-lucide="chevron-down"></i></button>
+            </div>
+            <div id="rr-mark-name" style="font-weight:700;">Panghulu</div>
+            <div id="rr-mark-pos" style="font-size:.75rem;color:var(--accent);">Di luhur aksara dasar (Atas)</div>
+          </div>
+        </div>
+
+        <div class="glass" style="width:100%;max-width:960px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.8rem;padding:.8rem 1.1rem;">
+          <div style="flex:1;min-width:220px;font-size:.85rem;color:#e4e4e7;">
+            <span id="rr-func-desc" style="color:var(--accent);font-weight:600;"></span><span id="rr-explanation"></span>
+          </div>
+          <div style="display:flex;gap:.5rem;">
+            <button id="btn-rr-random" data-g="rr-random" class="btn btn-primary"><i data-lucide="shuffle"></i><span>ACAK CONTOH</span></button>
+            <button id="btn-rr-reset" data-g="rr-reset" class="btn"><i data-lucide="rotate-ccw"></i><span>ULANGI</span></button>
+          </div>
+        </div>
+        <p class="hint">“Ngageser panangan ka gigir: ganti aksara, ka luhur handap: ganti rarangken.”</p>
+      </div>
+    </main>
+
+    <!-- NAVIGASI BAWAH -->
+    <footer id="lab-nav">
+      <div id="category-bar" class="seg">
+        <button data-cat="NGALAGENA" data-g="cat-NGALAGENA" class="cat-btn on">Ngalagena</button>
+        <button data-cat="SWARA" data-g="cat-SWARA" class="cat-btn">Swara</button>
+        <button data-cat="ANGKA" data-g="cat-ANGKA" class="cat-btn">Angka</button>
+        <button data-cat="RARANGKEN" data-g="cat-RARANGKEN" class="cat-btn">Rarangkén</button>
+        <button data-cat="CAMPURAN" data-g="cat-CAMPURAN" class="cat-btn">Campuran</button>
+      </div>
+
+      <div id="mode-bar" class="seg">
+        <button data-mode="SIMULASI" data-g="mode-SIMULASI" class="mode-btn on"><i data-lucide="pen-tool"></i><span>Simulasi</span></button>
+        <button data-mode="LATIHAN" data-g="mode-LATIHAN" class="mode-btn"><i data-lucide="book-open"></i><span>Latihan</span></button>
+        <button data-mode="RARANGKEN" data-g="mode-RARANGKEN" class="mode-btn"><i data-lucide="layers"></i><span>Rarangkén</span></button>
+      </div>
+
+      <div class="tools">
+        <button id="btn-next" data-g="next" class="btn btn-icon" title="Lewati / Berikutnya"><i data-lucide="skip-forward"></i></button>
+        <button id="btn-sound" data-g="sound" class="btn btn-icon" title="Suara aktif / nonaktif">
+          <i id="icon-sound-on" data-lucide="volume-2"></i>
+          <i id="icon-sound-off" data-lucide="volume-x" class="hide"></i>
+        </button>
+        <button id="btn-open-lkpd" data-g="lkpd" class="btn" title="Laporan Hasil Belajar (LKPD)">
+          <i data-lucide="file-spreadsheet"></i><span>LKPD <span id="lkpd-count-label">(0)</span></span>
+        </button>
+        <button id="btn-open-guide" data-g="guide" class="btn btn-icon" title="Panduan"><i data-lucide="help-circle"></i></button>
+        <button id="btn-open-reset" data-g="reset" class="btn btn-icon" title="Mulai ulang sesi"><i data-lucide="rotate-ccw" style="color:#fda4af;"></i></button>
+        <button id="btn-fullscreen" data-g="fullscreen" class="btn btn-icon" title="Layar penuh"><i data-lucide="maximize-2"></i></button>
+      </div>
+    </footer>
+  </section>
+
+  <!-- =====================================================================
+       3. MODAL LKPD
+       ===================================================================== -->
+  <div id="modal-lkpd" class="modal hide">
+    <div class="modal-card" style="max-width:900px;display:flex;flex-direction:column;padding:0;overflow:hidden;">
+      <div class="modal-head" style="padding:1.2rem 1.5rem;margin:0;border-bottom:1px solid var(--line);">
+        <div>
+          <h2 style="font-size:1.2rem;font-weight:800;color:var(--accent);">Laporan Latihan DIRAKSA AR</h2>
+          <p style="font-size:.75rem;color:var(--mute);">Rekapitulasi aktivitas belajar Aksara Sunda · SMA/MA Fase E</p>
+        </div>
+        <button id="btn-close-lkpd-top" data-g="lkpd-close-top" class="btn btn-icon"><i data-lucide="x"></i></button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.5rem;padding:1rem 1.5rem;">
+        <div class="stat"><small>TOTAL</small><b id="lkpd-sum-total" style="color:var(--accent);">0</b></div>
+        <div class="stat"><small>SELESAI</small><b id="lkpd-sum-completed" style="color:var(--ok);">0</b></div>
+        <div class="stat"><small>DILEWATI</small><b id="lkpd-sum-skipped" style="color:var(--bad);">0</b></div>
+        <div class="stat"><small>AKURASI LATIHAN</small><b id="lkpd-sum-accuracy">0%</b></div>
+        <div class="stat"><small>RATA-RATA RAPI</small><b id="lkpd-sum-rapi" style="color:var(--ok);">-</b></div>
+        <div class="stat"><small>TOTAL WAKTU</small><b id="lkpd-sum-time">0d</b></div>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;padding:0 1.5rem 1rem;min-height:120px;">
+        <div id="lkpd-empty-state" style="padding:2.5rem 0;text-align:center;color:var(--mute);font-size:.9rem;">
+          Belum ada aktivitas tercatat. Telusuri aksara di Mode Simulasi atau jawab soal di Mode Latihan.
+        </div>
+        <table id="lkpd-table" class="hide" style="width:100%;text-align:left;font-size:.85rem;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--line);color:var(--accent);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;">
+              <th style="padding:.6rem .6rem;">Aksara</th><th style="padding:.6rem;">Latin</th><th style="padding:.6rem;">Isi</th><th style="padding:.6rem;">Rapi</th><th style="padding:.6rem;">Waktu</th><th style="padding:.6rem;">Mode</th>
+            </tr>
+          </thead>
+          <tbody id="lkpd-tbody"></tbody>
+        </table>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.8rem;padding:1rem 1.5rem;border-top:1px solid var(--line);">
+        <p style="flex:1;min-width:200px;font-size:.7rem;color:var(--mute);">*Skor ISI &amp; RAPI adalah estimasi kesesuaian lintasan ujung jari terhadap kontur aksara, bukan penilaian kaligrafi kertas.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem;">
+          <button id="btn-lkpd-copy" data-g="lkpd-copy" class="btn btn-primary"><i data-lucide="copy"></i><span>SALIN</span></button>
+          <button id="btn-lkpd-excel" data-g="lkpd-excel" class="btn btn-ok"><i data-lucide="download"></i><span>EXCEL</span></button>
+          <button id="btn-lkpd-reset" data-g="lkpd-reset" class="btn btn-danger"><i data-lucide="rotate-ccw"></i><span>MULAI ULANG</span></button>
+          <button id="btn-close-lkpd-bottom" data-g="lkpd-close" class="btn">TUTUP</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. MODAL RESET -->
+  <div id="modal-reset" class="modal hide">
+    <div class="modal-card" style="max-width:440px;text-align:center;">
+      <i data-lucide="alert-triangle" style="width:42px;height:42px;color:var(--accent);margin:0 auto .5rem;"></i>
+      <h3 style="font-size:1.15rem;font-weight:800;">Mulai Ulang Sesi Belajar?</h3>
+      <p style="font-size:.85rem;color:var(--mute);margin-top:.4rem;">
+        Terdapat <b id="reset-log-count" style="color:var(--text);">0 catatan aktivitas</b> pada sesi ini. Ekspor laporan Excel dulu sebelum menghapus data.
+      </p>
+      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:.6rem;margin-top:1.3rem;">
+        <button id="btn-reset-export-first" data-g="reset-export" class="btn btn-ok"><i data-lucide="download"></i><span>Ekspor Dulu</span></button>
+        <button id="btn-confirm-reset" data-g="reset-confirm" class="btn btn-danger">Ya, Hapus &amp; Mulai Ulang</button>
+        <button id="btn-cancel-reset" data-g="reset-cancel" class="btn">Batal</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. MODAL PANDUAN -->
+  <div id="modal-guide" class="modal hide">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 style="font-size:1.15rem;font-weight:800;color:var(--accent);">Panduan DIRAKSA AR</h3>
+        <button id="btn-close-guide-top" data-g="guide-close-top" class="btn btn-icon"><i data-lucide="x"></i></button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.8rem;font-size:.85rem;color:#d4d4d8;">
+        <div style="padding:1rem;border-radius:16px;background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.22);">
+          <div style="font-weight:700;color:var(--accent);margin-bottom:.4rem;">Posisi tangan &amp; kamera</div>
+          <ul style="list-style:disc;padding-left:1.1rem;display:flex;flex-direction:column;gap:.25rem;">
+            <li>Pastikan cahaya cukup dari depan, tangan sekitar 40–60 cm dari kamera.</li>
+            <li>Acungkan <b>jari telunjuk (curuk)</b>; kursor emas mengikuti ujung telunjuk.</li>
+            <li><b>Memilih tombol:</b> arahkan kursor ke tombol dan tahan sekitar 1 detik sampai cincin penuh.</li>
+            <li>Tanpa kamera, semua tetap bisa dipakai dengan mouse atau layar sentuh.</li>
+          </ul>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.6rem;">
+          <div class="stat" style="text-align:left;padding:.9rem;"><b style="font-size:.9rem;color:var(--accent);">1. Simulasi</b><p style="font-size:.78rem;color:var(--mute);margin-top:.3rem;">Telusuri seluruh kontur aksara yang bercahaya. Hasil muncul setelah semuanya tertelusuri.</p></div>
+          <div class="stat" style="text-align:left;padding:.9rem;"><b style="font-size:.9rem;color:var(--accent);">2. Latihan</b><p style="font-size:.78rem;color:var(--mute);margin-top:.3rem;">Arahkan telunjuk ke salah satu jawaban dan tahan 0,8 detik.</p></div>
+          <div class="stat" style="text-align:left;padding:.9rem;"><b style="font-size:.9rem;color:var(--accent);">3. Rarangkén</b><p style="font-size:.78rem;color:var(--mute);margin-top:.3rem;">Pilih tombol panah, Acak Contoh, atau geser cepat tangan ke kiri/kanan dan atas/bawah.</p></div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:1.2rem;">
+        <button id="btn-close-guide-bottom" data-g="guide-close" class="btn btn-primary">Mengerti &amp; Kembali</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL TENTANG -->
+  <div id="modal-about" class="modal hide">
+    <div class="modal-card" style="max-width:520px;">
+      <div class="modal-head">
+        <h3 style="font-size:1.15rem;font-weight:800;color:var(--accent);">Tentang DIRAKSA AR</h3>
+        <button id="btn-close-about-top" data-g="about-close-top" class="btn btn-icon"><i data-lucide="x"></i></button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.8rem;font-size:.85rem;color:#d4d4d8;">
+        <p><b>DIRAKSA AR — Lab Maya Simulator Nulis Aksara Sunda</b> adalah media pembelajaran interaktif berbasis <i>Computer Vision</i> (<i>Virtual Air-Writing</i>) untuk Bahasa Sunda SMA/MA Fase E.</p>
+        <div class="stat" style="text-align:left;padding:.9rem;display:flex;flex-direction:column;gap:.35rem;">
+          <div><span style="color:var(--mute);">Pengembang:</span> <b style="color:var(--accent);">Farhan Mustaqim</b></div>
+          <div><span style="color:var(--mute);">Materi:</span> Swara (7), Ngalagena (23), Angka Sunda (10), Rarangkén (13).</div>
+          <div><span style="color:var(--mute);">Evaluasi:</span> Skor ISI dan RAPI dihitung dari kesesuaian lintasan ujung jari terhadap kontur aksara Unicode.</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:1.2rem;">
+        <button id="btn-close-about-bottom" data-g="about-close" class="btn btn-primary">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Inisialisasi ikon Lucide
+    lucide.createIcons();
+
+    const AKSARA_SWARA = [
+      { id: 'sw_a', char: 'ᮃ', latin: 'a', name: 'Aksara Swara A', category: 'SWARA' },
+      { id: 'sw_i', char: 'ᮄ', latin: 'i', name: 'Aksara Swara I', category: 'SWARA' },
+      { id: 'sw_u', char: 'ᮅ', latin: 'u', name: 'Aksara Swara U', category: 'SWARA' },
+      { id: 'sw_e_acute', char: 'ᮆ', latin: 'é', name: 'Aksara Swara É', category: 'SWARA' },
+      { id: 'sw_o', char: 'ᮇ', latin: 'o', name: 'Aksara Swara O', category: 'SWARA' },
+      { id: 'sw_e', char: 'ᮈ', latin: 'e', name: 'Aksara Swara E', category: 'SWARA' },
+      { id: 'sw_eu', char: 'ᮉ', latin: 'eu', name: 'Aksara Swara Eu', category: 'SWARA' },
+    ];
+
+    const AKSARA_NGALAGENA = [
+      { id: 'ng_ka', char: 'ᮊ', latin: 'ka', baseConsonant: 'k', name: 'Ngalagena Ka', category: 'NGALAGENA' },
+      { id: 'ng_ga', char: 'ᮌ', latin: 'ga', baseConsonant: 'g', name: 'Ngalagena Ga', category: 'NGALAGENA' },
+      { id: 'ng_nga', char: 'ᮍ', latin: 'nga', baseConsonant: 'ng', name: 'Ngalagena Nga', category: 'NGALAGENA' },
+      { id: 'ng_ca', char: 'ᮎ', latin: 'ca', baseConsonant: 'c', name: 'Ngalagena Ca', category: 'NGALAGENA' },
+      { id: 'ng_ja', char: 'ᮏ', latin: 'ja', baseConsonant: 'j', name: 'Ngalagena Ja', category: 'NGALAGENA' },
+      { id: 'ng_nya', char: 'ᮑ', latin: 'nya', baseConsonant: 'ny', name: 'Ngalagena Nya', category: 'NGALAGENA' },
+      { id: 'ng_ta', char: 'ᮒ', latin: 'ta', baseConsonant: 't', name: 'Ngalagena Ta', category: 'NGALAGENA' },
+      { id: 'ng_da', char: 'ᮓ', latin: 'da', baseConsonant: 'd', name: 'Ngalagena Da', category: 'NGALAGENA' },
+      { id: 'ng_na', char: 'ᮔ', latin: 'na', baseConsonant: 'n', name: 'Ngalagena Na', category: 'NGALAGENA' },
+      { id: 'ng_pa', char: 'ᮕ', latin: 'pa', baseConsonant: 'p', name: 'Ngalagena Pa', category: 'NGALAGENA' },
+      { id: 'ng_ba', char: 'ᮘ', latin: 'ba', baseConsonant: 'b', name: 'Ngalagena Ba', category: 'NGALAGENA' },
+      { id: 'ng_ma', char: 'ᮙ', latin: 'ma', baseConsonant: 'm', name: 'Ngalagena Ma', category: 'NGALAGENA' },
+      { id: 'ng_ya', char: 'ᮚ', latin: 'ya', baseConsonant: 'y', name: 'Ngalagena Ya', category: 'NGALAGENA' },
+      { id: 'ng_ra', char: 'ᮛ', latin: 'ra', baseConsonant: 'r', name: 'Ngalagena Ra', category: 'NGALAGENA' },
+      { id: 'ng_la', char: 'ᮜ', latin: 'la', baseConsonant: 'l', name: 'Ngalagena La', category: 'NGALAGENA' },
+      { id: 'ng_wa', char: 'ᮝ', latin: 'wa', baseConsonant: 'w', name: 'Ngalagena Wa', category: 'NGALAGENA' },
+      { id: 'ng_sa', char: 'ᮞ', latin: 'sa', baseConsonant: 's', name: 'Ngalagena Sa', category: 'NGALAGENA' },
+      { id: 'ng_ha', char: 'ᮠ', latin: 'ha', baseConsonant: 'h', name: 'Ngalagena Ha', category: 'NGALAGENA' },
+      { id: 'ng_fa', char: 'ᮖ', latin: 'fa', baseConsonant: 'f', name: 'Ngalagena Fa', category: 'NGALAGENA' },
+      { id: 'ng_va', char: 'ᮗ', latin: 'va', baseConsonant: 'v', name: 'Ngalagena Va', category: 'NGALAGENA' },
+      { id: 'ng_qa', char: 'ᮋ', latin: 'qa', baseConsonant: 'q', name: 'Ngalagena Qa', category: 'NGALAGENA' },
+      { id: 'ng_xa', char: 'ᮟ', latin: 'xa', baseConsonant: 'x', name: 'Ngalagena Xa', category: 'NGALAGENA' },
+      { id: 'ng_za', char: 'ᮐ', latin: 'za', baseConsonant: 'z', name: 'Ngalagena Za', category: 'NGALAGENA' },
+    ];
+
+    const AKSARA_ANGKA = [
+      { id: 'ang_0', char: '᮰', latin: '0', name: 'Angka Nol (0)', category: 'ANGKA' },
+      { id: 'ang_1', char: '᮱', latin: '1', name: 'Angka Hiji (1)', category: 'ANGKA' },
+      { id: 'ang_2', char: '᮲', latin: '2', name: 'Angka Dua (2)', category: 'ANGKA' },
+      { id: 'ang_3', char: '᮳', latin: '3', name: 'Angka Tilu (3)', category: 'ANGKA' },
+      { id: 'ang_4', char: '᮴', latin: '4', name: 'Angka Opat (4)', category: 'ANGKA' },
+      { id: 'ang_5', char: '᮵', latin: '5', name: 'Angka Lima (5)', category: 'ANGKA' },
+      { id: 'ang_6', char: '᮶', latin: '6', name: 'Angka Genep (6)', category: 'ANGKA' },
+      { id: 'ang_7', char: '᮷', latin: '7', name: 'Angka Tujuh (7)', category: 'ANGKA' },
+      { id: 'ang_8', char: '᮸', latin: '8', name: 'Angka Dalapan (8)', category: 'ANGKA' },
+      { id: 'ang_9', char: '᮹', latin: '9', name: 'Angka Salapan (9)', category: 'ANGKA' },
+    ];
+
+    const RARANGKEN_LIST = [
+      {
+        id: 'rr_panghulu', name: 'Panghulu', mark: 'ᮤ', displayWithDotted: '◌ᮤ',
+        position: 'Di luhur aksara dasar (Atas)',
+        functionDesc: 'Mengubah bunyi vokal inheren /a/ menjadi /i/',
+        applyRule: (base) => ({
+          combined: `${base.char}ᮤ`, latin: `${base.baseConsonant}i`,
+          explanation: `Aksara ${base.name} (${base.latin}) ditambah Panghulu di bagian atas menjadi berbunyi "${base.baseConsonant}i".`
+        })
+      },
+      {
+        id: 'rr_panyuku', name: 'Panyuku', mark: 'ᮥ', displayWithDotted: '◌ᮥ',
+        position: 'Di handap aksara dasar (Bawah)',
+        functionDesc: 'Mengubah bunyi vokal inheren /a/ menjadi /u/',
+        applyRule: (base) => ({
+          combined: `${base.char}ᮥ`, latin: `${base.baseConsonant}u`,
+          explanation: `Aksara ${base.name} (${base.latin}) ditambah Panyuku di bagian bawah menjadi berbunyi "${base.baseConsonant}u".`
+        })
+      },
+      {
+        id: 'rr_paneuleung', name: 'Paneuleung', mark: 'ᮩ', displayWithDotted: '◌ᮩ',
+        position: 'Di luhur aksara dasar (Atas)',
+        functionDesc: 'Mengubah bunyi vokal inheren /a/ menjadi /eu/',
+        applyRule: (base) => ({
+          combined: `${base.char}ᮩ`, latin: `${base.baseConsonant}eu`,
+          explanation: `Aksara ${base.name} (${base.latin}) ditambah Paneuleung di bagian atas menjadi berbunyi "${base.baseConsonant}eu".`
+        })
+      },
+      {
+        id: 'rr_pamepet', name: 'Pamepet', mark: 'ᮨ', displayWithDotted: '◌ᮨ',
+        position: 'Di luhur aksara dasar (Atas)',
+        functionDesc: 'Mengubah bunyi vokal inheren /a/ menjadi /e/ (pepet)',
+        applyRule: (base) => ({
+          combined: `${base.char}ᮨ`, latin: `${base.baseConsonant}e`,
+          explanation: `Aksara ${base.name} (${base.latin}) ditambah Pamepet di bagian atas menjadi berbunyi "${base.baseConsonant}e" (seperti pada kata "bener").`
+        })
+      },
+      {
+        id: 'rr_paneleng', name: 'Panéléng', mark: 'ᮦ', displayWithDotted: 'ᮦ◌',
+        position: 'Di hareup/kénca aksara dasar (Sejajar Kiri)',
+        functionDesc: 'Mengubah bunyi vokal inheren /a/ menjadi /é/ (taling)',
+        applyRule: (base) => ({
+          combined: `${base.char}ᮦ`, latin: `${base.baseConsonant}é`,
+          explanation: `Aksara ${base.name} (${base.latin}) ditambah Panéléng di sebelah kiri aksara menjadi berbunyi "${base.baseConsonant}é" (seperti pada kata "béré").`
+        })
+      },
+      {
+        id: 'rr_panolong', name: 'Panolong', mark: 'ᮧ', displayWithDotted: '◌ᮧ',
+        position: 'Di tukang/katuhu aksara dasar (Sejajar Kanan)',
+        functionDesc: 'Mengubah bunyi vokal inheren /a/ menjadi /o/',
+        applyRule: (base) => ({
+          combined: `${base.char}ᮧ`, latin: `${base.baseConsonant}o`,
+          explanation: `Aksara ${base.name} (${base.latin}) ditambah Panolong di sebelah kanan aksara menjadi berbunyi "${base.baseConsonant}o".`
+        })
+      },
+      {
+        id: 'rr_panglayar', name: 'Panglayar', mark: 'ᮁ', displayWithDotted: '◌ᮁ',
+        position: 'Di luhur aksara dasar (Atas)',
+        functionDesc: 'Menambah konsonan penutup /-r/ di akhir suku kata',
+        applyRule: (base) => ({
+          combined: `${base.char}ᮁ`, latin: `${base.latin}r`,
+          explanation: `Aksara ${base.name} (${base.latin}) ditambah Panglayar di atas menutup suku kata dengan konsonan /-r/ menjadi "${base.latin}r".`
+        })
+      },
+      {
+        id: 'rr_panyecek', name: 'Panyeceuk', mark: 'ᮀ', displayWithDotted: '◌ᮀ',
+        position: 'Di luhur aksara dasar (Atas)',
+        functionDesc: 'Menambah konsonan penutup /-ng/ di akhir suku kata',
+        applyRule: (base) => ({
+          combined: `${base.char}ᮀ`, latin: `${base.latin}ng`,
+          explanation: `Aksara ${base.name} (${base.latin}) ditambah Panyeceuk di atas menutup suku kata dengan konsonan /-ng/ menjadi "${base.latin}ng".`
+        })
+      },
+      {
+        id: 'rr_pangwisad', name: 'Pangwisad', mark: 'ᮂ', displayWithDotted: '◌ᮂ',
+        position: 'Di tukang/katuhu aksara dasar (Sejajar Kanan)',
+        functionDesc: 'Menambah konsonan penutup /-h/ di akhir suku kata',
+        applyRule: (base) => ({
+          combined: `${base.char}ᮂ`, latin: `${base.latin}h`,
+          explanation: `Aksara ${base.name} (${base.latin}) ditambah Pangwisad di sebelah kanan menutup suku kata dengan konsonan /-h/ menjadi "${base.latin}h".`
+        })
+      },
+      {
+        id: 'rr_pamaeh', name: 'Pamaéh', mark: '᮪', displayWithDotted: '◌᮪',
+        position: 'Di tukang/katuhu aksara dasar (Sejajar Kanan)',
+        functionDesc: 'Menghilangkan bunyi vokal inheren /a/ pada aksara dasar',
+        applyRule: (base) => ({
+          combined: `${base.char}᮪`, latin: `${base.baseConsonant}`,
+          explanation: `Aksara ${base.name} (${base.latin}) ditambah Pamaéh mematikan vokal /a/ sehingga menyisakan bunyi konsonan mati "${base.baseConsonant}".`
+        })
+      },
+      {
+        id: 'rr_panyakra', name: 'Panyakra', mark: 'ᮢ', displayWithDotted: '◌ᮢ',
+        position: 'Di handap aksara dasar (Bawah)',
+        functionDesc: 'Menyisipkan konsonan medial /-r-/ setelah konsonan dasar',
+        applyRule: (base) => {
+          if (base.baseConsonant === 'r') {
+            return {
+              invalid: true, combined: base.char, latin: base.latin,
+              explanation: `Kaidah Aksara Sunda: Aksara Ra (${base.char}) tidak lazim diberi Panyakra (-r-) karena menghasilkan gugus konsonan ganda "rra" yang tidak produktif.`
+            };
+          }
+          return {
+            combined: `${base.char}ᮢ`, latin: `${base.baseConsonant}ra`,
+            explanation: `Aksara ${base.name} (${base.latin}) ditambah Panyakra di bawah menyisipkan bunyi /-r-/ menjadi "${base.baseConsonant}ra".`
+          };
+        }
+      },
+      {
+        id: 'rr_panyiku', name: 'Panyiku', mark: 'ᮣ', displayWithDotted: '◌ᮣ',
+        position: 'Di handap aksara dasar (Bawah)',
+        functionDesc: 'Menyisipkan konsonan medial /-l-/ setelah konsonan dasar',
+        applyRule: (base) => {
+          if (base.baseConsonant === 'l') {
+            return {
+              invalid: true, combined: base.char, latin: base.latin,
+              explanation: `Kaidah Aksara Sunda: Aksara La (${base.char}) tidak diberi Panyiku (-l-) karena tidak ada gugus "lla" dalam fonotaktik Sunda.`
+            };
+          }
+          return {
+            combined: `${base.char}ᮣ`, latin: `${base.baseConsonant}la`,
+            explanation: `Aksara ${base.name} (${base.latin}) ditambah Panyiku di bawah menyisipkan bunyi /-l-/ menjadi "${base.baseConsonant}la".`
+          };
+        }
+      },
+      {
+        id: 'rr_pamingkal', name: 'Pamingkal', mark: 'ᮡ', displayWithDotted: '◌ᮡ',
+        position: 'Di handap/tukang aksara dasar (Bawah-Kanan)',
+        functionDesc: 'Menyisipkan semivokal medial /-y-/ setelah konsonan dasar',
+        applyRule: (base) => {
+          if (base.baseConsonant === 'y' || base.baseConsonant === 'ny') {
+            return {
+              invalid: true, combined: base.char, latin: base.latin,
+              explanation: `Kaidah Aksara Sunda: Aksara ${base.name} (${base.char}) tidak dikombinasikan dengan Pamingkal (-y-) karena bunyi palatal sudah melekat.`
+            };
+          }
+          return {
+            combined: `${base.char}ᮡ`, latin: `${base.baseConsonant}ya`,
+            explanation: `Aksara ${base.name} (${base.latin}) ditambah Pamingkal menyisipkan bunyi /-y-/ menjadi "${base.baseConsonant}ya".`
+          };
+        }
+      },
+    ];
+
+    const SIMULASI_RARANGKEN_ITEMS = [
+      { id: 'sim_rr_ki', char: 'ᮊᮤ', latin: 'ki', name: 'Ka + Panghulu (Ki)', category: 'RARANGKEN' },
+      { id: 'sim_rr_ku', char: 'ᮊᮥ', latin: 'ku', name: 'Ka + Panyuku (Ku)', category: 'RARANGKEN' },
+      { id: 'sim_rr_ke', char: 'ᮊᮦ', latin: 'ké', name: 'Ka + Panéléng (Ké)', category: 'RARANGKEN' },
+      { id: 'sim_rr_ko', char: 'ᮊᮧ', latin: 'ko', name: 'Ka + Panolong (Ko)', category: 'RARANGKEN' },
+      { id: 'sim_rr_keu', char: 'ᮊᮩ', latin: 'keu', name: 'Ka + Paneuleung (Keu)', category: 'RARANGKEN' },
+      { id: 'sim_rr_kang', char: 'ᮊᮀ', latin: 'kang', name: 'Ka + Panyeceuk (Kang)', category: 'RARANGKEN' },
+      { id: 'sim_rr_kar', char: 'ᮊᮁ', latin: 'kar', name: 'Ka + Panglayar (Kar)', category: 'RARANGKEN' },
+      { id: 'sim_rr_kah', char: 'ᮊᮂ', latin: 'kah', name: 'Ka + Pangwisad (Kah)', category: 'RARANGKEN' },
+      { id: 'sim_rr_kra', char: 'ᮊᮢ', latin: 'kra', name: 'Ka + Panyakra (Kra)', category: 'RARANGKEN' },
+      { id: 'sim_rr_kla', char: 'ᮊᮣ', latin: 'kla', name: 'Ka + Panyiku (Kla)', category: 'RARANGKEN' },
+    ];
+
+    const QUESTION_BANK = [
+      { id: 'q_ng_1', category: 'NGALAGENA', promptSunda: 'Aksara Ngalagena di handap ieu miboga sora / transliterasi...', displayChar: 'ᮊ', options: ['ka', 'ga', 'nga', 'ca'], correctIndex: 0, latinRef: 'ka', explanation: 'ᮊ nyaéta Aksara Ngalagena Ka anu miboga sora vokal inheren /a/.' },
+      { id: 'q_ng_2', category: 'NGALAGENA', promptSunda: 'Pilih wangun Aksara Ngalagena pikeun sora "nga"!', displayChar: 'nga', isLatinPrompt: true, options: ['ᮍ', 'ᮌ', 'ᮑ', 'ᮔ'], correctIndex: 0, latinRef: 'nga', explanation: 'Wangun ᮍ nyaéta Aksara Ngalagena Nga, sedengkeun ᮌ (ga), ᮑ (nya), ᮔ (na).' },
+      { id: 'q_ng_3', category: 'NGALAGENA', promptSunda: 'Naon ngaran jeung sora tina aksara ieu?', displayChar: 'ᮑ', options: ['Ngalagena Nya (nya)', 'Ngalagena Na (na)', 'Ngalagena Ya (ya)', 'Ngalagena Ca (ca)'], correctIndex: 0, latinRef: 'nya', explanation: 'ᮑ nyaéta Aksara Ngalagena Nya.' },
+      { id: 'q_ng_4', category: 'NGALAGENA', promptSunda: 'Aksara Ngalagena "ba" ditulis ku lambang...', displayChar: 'ba', isLatinPrompt: true, options: ['ᮘ', 'ᮕ', 'ᮙ', 'ᮝ'], correctIndex: 0, latinRef: 'ba', explanation: 'ᮘ nyaéta Aksara Ngalagena Ba.' },
+      { id: 'q_ng_5', category: 'NGALAGENA', promptSunda: 'Sora Latin tina Aksara Ngalagena di handap nyaéta...', displayChar: 'ᮞ', options: ['sa', 'ha', 'la', 'ra'], correctIndex: 0, latinRef: 'sa', explanation: 'ᮞ nyaéta Aksara Ngalagena Sa.' },
+      { id: 'q_ng_6', category: 'NGALAGENA', promptSunda: 'Mana Aksara Ngalagena anu dibaca "ha"?', displayChar: 'ha', isLatinPrompt: true, options: ['ᮠ', 'ᮞ', 'ᮛ', 'ᮓ'], correctIndex: 0, latinRef: 'ha', explanation: 'ᮠ nyaéta Aksara Ngalagena Ha.' },
+      { id: 'q_sw_1', category: 'SWARA', promptSunda: 'Aksara Swara di handap ieu ngalambangkeun vokal mandiri...', displayChar: 'ᮃ', options: ['a', 'i', 'u', 'o'], correctIndex: 0, latinRef: 'a', explanation: 'ᮃ nyaéta Aksara Swara A pikeun nulis vokal mandiri /a/.' },
+      { id: 'q_sw_2', category: 'SWARA', promptSunda: 'Pilih Aksara Swara pikeun vokal mandiri khas Sunda "eu"!', displayChar: 'eu', isLatinPrompt: true, options: ['ᮉ', 'ᮈ', 'ᮆ', 'ᮅ'], correctIndex: 0, latinRef: 'eu', explanation: 'ᮉ nyaéta Aksara Swara Eu, sedengkeun ᮈ (e pepet) jeung ᮆ (é taling).' },
+      { id: 'q_sw_3', category: 'SWARA', promptSunda: 'Aksara Swara ᮆ dibaca...', displayChar: 'ᮆ', options: ['é (taling)', 'e (pepet)', 'eu', 'i'], correctIndex: 0, latinRef: 'é', explanation: 'ᮆ nyaéta Aksara Swara É (taling) saperti dina kecap "éta".' },
+      { id: 'q_sw_4', category: 'SWARA', promptSunda: 'Vokal mandiri /u/ dina Aksara Swara ditulis...', displayChar: 'u', isLatinPrompt: true, options: ['ᮅ', 'ᮄ', 'ᮇ', 'ᮃ'], correctIndex: 0, latinRef: 'u', explanation: 'ᮅ nyaéta Aksara Swara U.' },
+      { id: 'q_ang_1', category: 'ANGKA', promptSunda: 'Angka Sunda di handap ieu nilaina sarua jeung angka...', displayChar: '᮳', options: ['3 (Tilu)', '2 (Dua)', '5 (Lima)', '8 (Dalapan)'], correctIndex: 0, latinRef: '3', explanation: '᮳ nyaéta Angka Sunda Tilu (3).' },
+      { id: 'q_ang_2', category: 'ANGKA', promptSunda: 'Pilih lambang Angka Sunda pikeun angka 7 (Tujuh)!', displayChar: '7', isLatinPrompt: true, options: ['᮷', '᮶', '᮸', '᮹'], correctIndex: 0, latinRef: '7', explanation: '᮷ nyaéta Angka Sunda Tujuh (7).' },
+      { id: 'q_ang_3', category: 'ANGKA', promptSunda: 'Angka Sunda ᮵ ngalambangkeun angka...', displayChar: '᮵', options: ['5 (Lima)', '4 (Opat)', '6 (Genep)', '1 (Hiji)'], correctIndex: 0, latinRef: '5', explanation: '᮵ nyaéta Angka Sunda Lima (5).' },
+      { id: 'q_ang_4', category: 'ANGKA', promptSunda: 'Lambang ᮹ dina Angka Sunda hartina...', displayChar: '᮹', options: ['9 (Salapan)', '6 (Genep)', '8 (Dalapan)', '0 (Nol)'], correctIndex: 0, latinRef: '9', explanation: '᮹ nyaéta Angka Sunda Salapan (9).' },
+      { id: 'q_rr_1', category: 'RARANGKEN', promptSunda: 'Engang (suku kata) Aksara Sunda di handap ieu dibaca...', displayChar: 'ᮊᮤ', options: ['ki', 'ku', 'ké', 'keu'], correctIndex: 0, latinRef: 'ki', explanation: 'Aksara Ka (ᮊ) ditambah rarangkén Panghulu (◌ᮤ) di luhur ngarobah vokal /a/ jadi /i/ → "ki".' },
+      { id: 'q_rr_2', category: 'RARANGKEN', promptSunda: 'Rarangkén anu gunana pikeun maéhan (ngaleungitkeun) sora vokal /a/ nyaéta...', displayChar: '◌᮪', options: ['Pamaéh', 'Pangwisad', 'Panolong', 'Panglayar'], correctIndex: 0, latinRef: 'pamaéh', explanation: 'Pamaéh (◌᮪) ditulis di katuhu aksara dasar pikeun ngaleungitkeun vokal inheren /a/.' },
+      { id: 'q_rr_3', category: 'RARANGKEN', promptSunda: 'Kumaha cara maca engang Aksara Sunda ieu?', displayChar: 'ᮙᮀ', options: ['mang', 'mar', 'mah', 'ma'], correctIndex: 0, latinRef: 'mang', explanation: 'Aksara Ma (ᮙ) ditambah Panyeceuk (◌ᮀ) di luhur nambahkeun konsonan panutup /-ng/ jadi "mang".' },
+      { id: 'q_rr_4', category: 'RARANGKEN', promptSunda: 'Aksara Pa (ᮕ) lamun dipasihan rarangkén Panyakra di handapna (ᮕᮢ) dibaca...', displayChar: 'ᮕᮢ', options: ['pra', 'pla', 'pya', 'par'], correctIndex: 0, latinRef: 'pra', explanation: 'Panyakra (◌ᮢ) nyelapkeun konsonan /-r-/ sanggeus konsonan dasar Pa jadi "pra".' },
+      { id: 'q_rr_5', category: 'RARANGKEN', promptSunda: 'Engang "su" ditulis ku Aksara Sa (ᮞ) ditambah rarangkén...', displayChar: 'ᮞᮥ', options: ['Panyuku di handap', 'Panghulu di luhur', 'Panolong di katuhu', 'Panéléng di kénca'], correctIndex: 0, latinRef: 'su', explanation: 'Panyuku (◌ᮥ) ditulis di handap aksara dasar pikeun ngarobah sora /a/ jadi /u/.' },
+      { id: 'q_rr_6', category: 'RARANGKEN', promptSunda: 'Bacaan anu bener pikeun gabungan aksara di handap ieu nyaéta...', displayChar: 'ᮓᮁ', options: ['dar', 'dang', 'dah', 'dra'], correctIndex: 0, latinRef: 'dar', explanation: 'Aksara Da (ᮓ) ditambah Panglayar (◌ᮁ) di luhur nambahkeun konsonan tungtung /-r/ jadi "dar".' }
+    ];
+
+    const HAND_CONNECTIONS = [
+      [0,1],[1,2],[2,3],[3,4],
+      [0,5],[5,6],[6,7],[7,8],
+      [5,9],[9,10],[10,11],[11,12],
+      [9,13],[13,14],[14,15],[15,16],
+      [13,17],[17,18],[18,19],[19,20],
+      [0,17]
+    ];
+
+    // =========================================================================
+    // STATE GLOBAL
+    // =========================================================================
+    const $ = (id) => document.getElementById(id);
+    const showEl = (el) => el.classList.remove('hide');
+    const hideEl = (el) => el.classList.add('hide');
+
+    const state = {
+      screen: 'SPLASH',
+      activeMode: 'SIMULASI',
+      category: 'NGALAGENA',
+      soundEnabled: true,
+
+      cameraReq: false,
+      cameraReady: false,
+      cameraError: null,
+      handsDetected: 0,
+      fingerPos: null,
+      smoothedFinger: { x: 0.5, y: 0.5, active: false },
+      trailPoints: [],
+      isPointerDown: false,
+
+      simIndex: 0,
+      simIsi: 0,
+      simRapi: 100,
+      simElapsedSec: 0,
+      simCompleted: false,
+      simStartTime: Date.now(),
+      userTracePoints: [],
+      targetMaskData: null,
+      simRecorded: false,
+
+      quizIndex: 0,
+      quizFeedback: null,
+      optionLocked: false,
+      quizSessionFinished: false,
+      quizQuestionStart: Date.now(),
+      quizStats: { answered: 0, correct: 0, wrong: 0, score: 0, elapsedSec: 0 },
+
+      rrBaseIndex: 0,
+      rrMarkIndex: 0,
+      gestureHistory: [],
+      lastGestureCooldown: 0,
+
+      lkpdLogs: []
+    };
+
+    // =========================================================================
+    // AUDIO & TOAST
+    // =========================================================================
+    function playBeep(freq = 660, duration = 0.12, type = 'sine') {
+      if (!state.soundEnabled) return;
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration);
+        setTimeout(() => ctx.close(), duration * 1000 + 100);
+      } catch (e) {}
+    }
+
+    function speakPhoneticSunda(latinText) {
+      if (!state.soundEnabled || !('speechSynthesis' in window)) return;
+      try {
+        window.speechSynthesis.cancel();
+        let phonetic = String(latinText).toLowerCase().trim();
+        if (phonetic === 'eu') phonetic = 'euh';
+        else if (phonetic.endsWith('eu')) phonetic = phonetic.replace(/eu$/, 'euh');
+        else if (phonetic === 'é') phonetic = 'éh';
+
+        const utter = new SpeechSynthesisUtterance(phonetic);
+        const voices = window.speechSynthesis.getVoices();
+        const suVoice = voices.find(v => v.lang.toLowerCase().includes('su'));
+        const idVoice = voices.find(v => v.lang.toLowerCase().includes('id'));
+        if (suVoice) { utter.voice = suVoice; utter.lang = suVoice.lang; }
+        else if (idVoice) { utter.voice = idVoice; utter.lang = 'id-ID'; }
+        else { utter.lang = 'id-ID'; }
+        utter.rate = 0.9;
+        utter.pitch = 1.02;
+        window.speechSynthesis.speak(utter);
+      } catch (e) {}
+    }
+
+    let toastTimeout = null;
+    function triggerToast(text) {
+      const box = $('toast-box');
+      $('toast-text').textContent = text;
+      showEl(box);
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => hideEl(box), 3200);
+    }
+
+    // =========================================================================
+    // HELPER DATA
+    // =========================================================================
+    function getSimItems() {
+      if (state.category === 'SWARA') return AKSARA_SWARA;
+      if (state.category === 'ANGKA') return AKSARA_ANGKA;
+      if (state.category === 'RARANGKEN') return SIMULASI_RARANGKEN_ITEMS;
+      if (state.category === 'CAMPURAN') return [...AKSARA_NGALAGENA.slice(0, 18), ...AKSARA_SWARA, ...AKSARA_ANGKA];
+      return AKSARA_NGALAGENA;
+    }
+    function getCurrentSimItem() {
+      const items = getSimItems();
+      return items[state.simIndex % items.length] || AKSARA_NGALAGENA[0];
+    }
+    function getFilteredQuestions() {
+      if (state.category === 'CAMPURAN') return QUESTION_BANK;
+      const filtered = QUESTION_BANK.filter(q => q.category === state.category);
+      return filtered.length > 0 ? filtered : QUESTION_BANK;
+    }
+    function getCurrentQuestion() {
+      const qs = getFilteredQuestions();
+      return qs[state.quizIndex % qs.length] || QUESTION_BANK[0];
+    }
+    function getCurrentRrBase() { return AKSARA_NGALAGENA[state.rrBaseIndex % AKSARA_NGALAGENA.length]; }
+    function getCurrentRrMark() { return RARANGKEN_LIST[state.rrMarkIndex % RARANGKEN_LIST.length]; }
+
+    function anyModalOpen() {
+      return ['modal-lkpd', 'modal-reset', 'modal-guide', 'modal-about']
+        .some(id => !$(id).classList.contains('hide'));
+    }
+
+    // =========================================================================
+    // STATUS UI
+    // =========================================================================
+    let lastStatusKey = '';
+    function updateHudUI() {
+      let cls, txt;
+      if (state.cameraReady) {
+        if (state.handsDetected > 0) { cls = 'dot-ok'; txt = 'Tangan terdeteksi'; }
+        else { cls = ''; txt = 'Angkat telunjuk ke kamera'; }
+      } else if (state.cameraError) { cls = 'dot-off'; txt = 'Mode mouse / sentuh'; }
+      else { cls = ''; txt = 'Menyiapkan kamera…'; }
+
+      const key = cls + '|' + txt;
+      if (key !== lastStatusKey) {
+        lastStatusKey = key;
+        document.querySelectorAll('.cam-dot').forEach(d => { d.className = 'cam-dot ' + cls; });
+        document.querySelectorAll('.cam-label').forEach(l => { l.textContent = txt; });
+      }
+      $('lkpd-count-label').textContent = `(${state.lkpdLogs.length})`;
+    }
+
+    function updateFingerCursorUI() {
+      const cursor = $('finger-cursor');
+      if (!state.fingerPos || state.fingerPos.source !== 'HAND') {
+        hideEl(cursor);
+        return;
+      }
+      showEl(cursor);
+      cursor.style.left = `${state.fingerPos.x * window.innerWidth}px`;
+      cursor.style.top = `${state.fingerPos.y * window.innerHeight}px`;
+    }
+
+    // =========================================================================
+    // MESIN GESTUR GLOBAL: TAHAN TELUNJUK PADA TOMBOL [data-g] => KLIK
+    // =========================================================================
+    const DWELL_MS = 900;
+    const gEngine = { key: null, el: null, start: 0, lockKey: null, lastFire: 0 };
+
+    function setCursorProgress(p) {
+      $('finger-cursor').style.setProperty('--cp', String(Math.round(p * 100)));
+    }
+
+    function clearHot() {
+      if (gEngine.el) {
+        gEngine.el.classList.remove('g-hot');
+        gEngine.el.style.setProperty('--gp', '0');
+      }
+      document.querySelectorAll('.g-hot').forEach(e => e.classList.remove('g-hot'));
+      setCursorProgress(0);
+    }
+
+    function resetGestureEngine() {
+      clearHot();
+      gEngine.key = null;
+      gEngine.el = null;
+      gEngine.lockKey = null;
+    }
+
+    function gTargetAt(x, y) {
+      const e = document.elementFromPoint(x, y);
+      if (!e || !e.closest) return null;
+      const t = e.closest('[data-g]');
+      if (!t || t.disabled) return null;
+      return t;
+    }
+
+    function gestureDwell(clientX, clientY) {
+      const now = performance.now();
+      const t = gTargetAt(clientX, clientY);
+      const key = t ? t.dataset.g : null;
+
+      if (key !== gEngine.key) {
+        clearHot();
+        gEngine.key = key;
+        gEngine.el = t;
+        gEngine.start = now;
+        if (gEngine.lockKey && key !== gEngine.lockKey) gEngine.lockKey = null;
+        if (t && gEngine.lockKey !== key) t.classList.add('g-hot');
+        return;
+      }
+      if (!t) return;
+      gEngine.el = t;
+      if (gEngine.lockKey === key) return;
+      if (now - gEngine.lastFire < 700) { gEngine.start = now; return; }
+
+      const dwell = Number(t.dataset.dwell) || DWELL_MS;
+      const p = Math.min(1, (now - gEngine.start) / dwell);
+      t.classList.add('g-hot');
+      t.style.setProperty('--gp', String(Math.round(p * 100)));
+      setCursorProgress(p);
+
+      if (p >= 1) {
+        gEngine.lockKey = key;
+        gEngine.lastFire = now;
+        t.style.setProperty('--gp', '0');
+        t.classList.remove('g-hot');
+        setCursorProgress(0);
+        playBeep(720, 0.08, 'triangle');
+        t.click();
+      }
+    }
+
+    // =========================================================================
+    // MODE 1: SIMULASI
+    // =========================================================================
+    const SIM_W = 560, SIM_H = 420, SIM_CELL = 12, SIM_HIT_R = 24, SIM_TOL = 20, SIM_DONE = 0.95;
+
+    function initSimulasiCanvas() {
+      const guideCanvas = $('sim-guide-canvas');
+      const traceCanvas = $('sim-trace-canvas');
+      guideCanvas.width = SIM_W; guideCanvas.height = SIM_H;
+      traceCanvas.width = SIM_W; traceCanvas.height = SIM_H;
+
+      const gCtx = guideCanvas.getContext('2d');
+      const tCtx = traceCanvas.getContext('2d');
+      gCtx.clearRect(0, 0, SIM_W, SIM_H);
+      tCtx.clearRect(0, 0, SIM_W, SIM_H);
+
+      const item = getCurrentSimItem();
+      $('sim-item-name').textContent = item.name;
+      $('sim-item-latin').textContent = `Bunyi “${item.latin}”`;
+      $('sim-item-time').textContent = '0d';
+
+      const ch = item.char;
+      const fontSize = ch.length > 1 ? 215 : 250;
+      const cy = SIM_H / 2 + 10;
+
+      const off = document.createElement('canvas');
+      off.width = SIM_W; off.height = SIM_H;
+      const oc = off.getContext('2d');
+      oc.font = `600 ${fontSize}px "Noto Sans Sundanese", sans-serif`;
+      oc.textAlign = 'center';
+      oc.textBaseline = 'middle';
+      oc.fillStyle = '#ffffff';
+      oc.strokeStyle = '#ffffff';
+      oc.lineWidth = 22;
+      oc.strokeText(ch, SIM_W / 2, cy);
+      oc.fillText(ch, SIM_W / 2, cy);
+
+      const imgData = oc.getImageData(0, 0, SIM_W, SIM_H).data;
+      const checkpoints = [];
+      const half = SIM_CELL / 2;
+      for (let y = 0; y < SIM_H; y += SIM_CELL) {
+        for (let x = 0; x < SIM_W; x += SIM_CELL) {
+          const px = Math.min(SIM_W - 1, x + half);
+          const py = Math.min(SIM_H - 1, y + half);
+          if (imgData[(py * SIM_W + px) * 4 + 3] > 90) {
+            checkpoints.push({ x: px, y: py, hit: false });
+          }
+        }
+      }
+
+      state.targetMaskData = {
+        width: SIM_W, height: SIM_H, imgData, checkpoints,
+        hitCount: 0, totalTraceSamples: 0, onContourSamples: 0
+      };
+
+      gCtx.save();
+      gCtx.font = `600 ${fontSize}px "Noto Sans Sundanese", sans-serif`;
+      gCtx.textAlign = 'center';
+      gCtx.textBaseline = 'middle';
+      gCtx.shadowColor = 'rgba(245, 158, 11, 0.7)';
+      gCtx.shadowBlur = 20;
+      gCtx.strokeStyle = 'rgba(251, 191, 36, 0.85)';
+      gCtx.lineWidth = 3;
+      gCtx.setLineDash([9, 7]);
+      gCtx.strokeText(ch, SIM_W / 2, cy);
+      gCtx.setLineDash([]);
+      gCtx.fillStyle = 'rgba(254, 243, 199, 0.14)';
+      gCtx.fillText(ch, SIM_W / 2, cy);
+      gCtx.restore();
+
+      state.userTracePoints = [];
+      state.simIsi = 0;
+      state.simRapi = 100;
+      state.simElapsedSec = 0;
+      state.simCompleted = false;
+      state.simRecorded = false;
+      state.simStartTime = Date.now();
+
+      hideEl($('sim-result-overlay'));
+      updateSimulasiBarsUI();
+      updateHudUI();
+      speakPhoneticSunda(item.latin);
+    }
+
+    function updateSimulasiBarsUI() {
+      $('sim-bar-isi-label').textContent = `${state.simIsi}%`;
+      $('sim-bar-isi').style.width = `${state.simIsi}%`;
+    }
+
+    function showSimulasiCompletedOverlay() {
+      const item = getCurrentSimItem();
+      $('sim-res-char').textContent = item.char;
+      $('sim-res-latin').textContent = item.latin;
+      $('sim-res-isi').textContent = `${state.simIsi}%`;
+      $('sim-res-rapi').textContent = `${state.simRapi}%`;
+      $('sim-res-time').textContent = `${state.simElapsedSec}d`;
+      showEl($('sim-result-overlay'));
+    }
+
+    function distToSegment(px, py, ax, ay, bx, by) {
+      const dx = bx - ax, dy = by - ay;
+      const len2 = dx * dx + dy * dy;
+      if (len2 === 0) return Math.hypot(px - ax, py - ay);
+      let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+    }
+
+    function processSimulasiTracePoint(clientX, clientY) {
+      if (state.activeMode !== 'SIMULASI' || state.simCompleted) return;
+      const traceCanvas = $('sim-trace-canvas');
+      const mask = state.targetMaskData;
+      if (!mask) return;
+
+      const rect = traceCanvas.getBoundingClientRect();
+      if (rect.width === 0) return;
+      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
+
+      const cx = (clientX - rect.left) * (traceCanvas.width / rect.width);
+      const cy = (clientY - rect.top) * (traceCanvas.height / rect.height);
+
+      const pts = state.userTracePoints;
+      const lastPt = pts.length > 0 ? pts[pts.length - 1] : null;
+      if (lastPt && Math.hypot(cx - lastPt.x, cy - lastPt.y) < 3) return;
+      pts.push({ x: cx, y: cy });
+
+      const connected = lastPt && Math.hypot(cx - lastPt.x, cy - lastPt.y) < 90;
+      const ax = connected ? lastPt.x : cx;
+      const ay = connected ? lastPt.y : cy;
+
+      const tCtx = traceCanvas.getContext('2d');
+      tCtx.save();
+      tCtx.lineCap = 'round';
+      tCtx.lineJoin = 'round';
+      tCtx.lineWidth = 24;
+      tCtx.strokeStyle = 'rgba(251, 191, 36, 0.92)';
+      tCtx.shadowColor = '#f59e0b';
+      tCtx.shadowBlur = 14;
+      tCtx.beginPath();
+      tCtx.moveTo(ax, ay);
+      tCtx.lineTo(cx, cy);
+      tCtx.stroke();
+      tCtx.restore();
+
+      // Kerapihan: titik berada dekat kontur?
+      const ix = Math.round(cx), iy = Math.round(cy);
+      let near = false;
+      for (let dy = -SIM_TOL; dy <= SIM_TOL && !near; dy += 4) {
+        for (let dx = -SIM_TOL; dx <= SIM_TOL; dx += 4) {
+          const nx = ix + dx, ny = iy + dy;
+          if (nx >= 0 && nx < mask.width && ny >= 0 && ny < mask.height &&
+              mask.imgData[(ny * mask.width + nx) * 4 + 3] > 80) { near = true; break; }
+        }
+      }
+      mask.totalTraceSamples += 1;
+      if (near) mask.onContourSamples += 1;
+
+      // Isi: tandai titik kontur yang dilewati (termasuk sepanjang segmen)
+      for (const cp of mask.checkpoints) {
+        if (!cp.hit && distToSegment(cp.x, cp.y, ax, ay, cx, cy) <= SIM_HIT_R) {
+          cp.hit = true;
+          mask.hitCount += 1;
+        }
+      }
+
+      const coverage = mask.hitCount / Math.max(1, mask.checkpoints.length);
+      state.simIsi = Math.min(100, Math.round(coverage * 100));
+      state.simRapi = Math.round((mask.onContourSamples / Math.max(1, mask.totalTraceSamples)) * 100);
+      state.simElapsedSec = Math.max(1, Math.floor((Date.now() - state.simStartTime) / 1000));
+      updateSimulasiBarsUI();
+
+      // Hasil HANYA muncul setelah seluruh aksara tertelusuri
+      if (coverage >= SIM_DONE && !state.simRecorded) {
+        state.simIsi = 100;
+        updateSimulasiBarsUI();
+        completeCurrentSimulasi();
+      }
+    }
+
+    function completeCurrentSimulasi() {
+      if (state.simRecorded) return;
+      state.simRecorded = true;
+      const durationSec = Math.max(1, Math.floor((Date.now() - state.simStartTime) / 1000));
+      state.simElapsedSec = durationSec;
+      state.simCompleted = true;
+      const item = getCurrentSimItem();
+
+      playBeep(880, 0.18, 'triangle');
+      speakPhoneticSunda(item.latin);
+
+      state.lkpdLogs.push({
+        id: `sim_${Date.now()}`, mode: 'Simulasi', category: item.category,
+        aksara: item.char, latin: item.latin,
+        isi: `${state.simIsi}%`, rapi: `${state.simRapi}%`, rapiNumeric: state.simRapi,
+        waktu: `${durationSec}d`, durationSec, status: 'SELESAI'
+      });
+
+      showSimulasiCompletedOverlay();
+      updateHudUI();
+    }
+
+    function goNextSim() {
+      state.simIndex = (state.simIndex + 1) % getSimItems().length;
+      initSimulasiCanvas();
+    }
+
+    // =========================================================================
+    // MODE 2: LATIHAN
+    // =========================================================================
+    function renderLatihanUI() {
+      const qs = getFilteredQuestions();
+      const q = getCurrentQuestion();
+      const accuracy = state.quizStats.answered > 0
+        ? Math.round((state.quizStats.correct / state.quizStats.answered) * 100) : 0;
+
+      $('quiz-stat-answered').textContent = `${state.quizStats.answered}/${qs.length}`;
+      $('quiz-stat-correct').textContent = state.quizStats.correct;
+      $('quiz-stat-wrong').textContent = state.quizStats.wrong;
+      $('quiz-stat-score').textContent = state.quizStats.score;
+      $('quiz-stat-accuracy').textContent = `${accuracy}%`;
+      $('quiz-stat-time').textContent = `${state.quizStats.elapsedSec}d`;
+
+      const active = $('quiz-active-container');
+      const finished = $('quiz-finished-container');
+
+      if (state.quizSessionFinished) {
+        hideEl(active);
+        showEl(finished);
+        $('quiz-end-answered').textContent = state.quizStats.answered;
+        $('quiz-end-ratio').textContent = `${state.quizStats.correct} / ${state.quizStats.wrong}`;
+        $('quiz-end-accuracy').textContent = `${accuracy}%`;
+        $('quiz-end-recommend').innerHTML = `<strong>Rekomendasi:</strong> ${
+          accuracy >= 80
+            ? 'Pemahaman Aksara Sunda Anda sangat baik! Lanjutkan eksplorasi kombinasi suku kata pada Mode Rarangkén.'
+            : 'Disarankan mengulang Mode Simulasi pada kategori yang masih sering keliru agar bentuk aksara lebih cepat dikenali.'
+        }`;
+        return;
+      }
+
+      showEl(active);
+      hideEl(finished);
+
+      $('quiz-header-meta').textContent = `${q.category} · Soal ${state.quizIndex + 1}`;
+      $('quiz-prompt-text').textContent = q.promptSunda;
+
+      const disp = $('quiz-display-char');
+      disp.textContent = q.displayChar;
+      disp.style.fontFamily = q.isLatinPrompt ? "'Plus Jakarta Sans', sans-serif" : '';
+      disp.className = q.isLatinPrompt ? '' : 'sunda';
+
+      const grid = $('quiz-options-grid');
+      grid.innerHTML = '';
+      q.options.forEach((opt, idx) => {
+        const isCorrectOpt = state.quizFeedback && idx === q.correctIndex;
+        const isWrongSel = state.quizFeedback && state.quizFeedback.selectedIdx === idx && !state.quizFeedback.isCorrect;
+
+        const btn = document.createElement('button');
+        btn.className = 'opt' + (isCorrectOpt ? ' opt-ok' : (isWrongSel ? ' opt-bad' : ''));
+        btn.dataset.g = `opt-${idx}`;
+        btn.dataset.dwell = '800';
+        btn.disabled = Boolean(state.quizFeedback);
+        btn.innerHTML = `<span class="opt-key">${String.fromCharCode(65 + idx)}</span><span class="opt-text sunda">${opt}</span>`;
+        btn.addEventListener('click', () => handleSelectQuizOption(idx));
+        grid.appendChild(btn);
+      });
+
+      const fb = $('quiz-feedback-box');
+      const pill = $('quiz-instruction-pill');
+      if (state.quizFeedback) {
+        showEl(fb);
+        hideEl(pill);
+        fb.className = `feedback ${state.quizFeedback.isCorrect ? 'fb-ok' : 'fb-bad'}`;
+        $('quiz-feedback-title').innerHTML = `${state.quizFeedback.isCorrect ? 'LERES!' : 'SALAH.'} <span style="font-weight:400;font-size:.85rem;">Jawaban bener: <strong class="sunda">${q.options[q.correctIndex]}</strong></span>`;
+        $('quiz-feedback-desc').textContent = q.explanation;
+      } else {
+        hideEl(fb);
+        showEl(pill);
+      }
+    }
+
+    function handleSelectQuizOption(selectedIdx) {
+      if (state.optionLocked || state.quizFeedback || state.quizSessionFinished) return;
+      state.optionLocked = true;
+
+      const q = getCurrentQuestion();
+      const isCorrect = selectedIdx === q.correctIndex;
+      const durationSec = Math.max(1, Math.floor((Date.now() - state.quizQuestionStart) / 1000));
+
+      if (isCorrect) { playBeep(880, 0.16, 'triangle'); speakPhoneticSunda(q.latinRef); }
+      else { playBeep(240, 0.22, 'sawtooth'); }
+
+      state.quizFeedback = { isCorrect, selectedIdx };
+      state.quizStats.answered += 1;
+      if (isCorrect) { state.quizStats.correct += 1; state.quizStats.score += 1; }
+      else { state.quizStats.wrong += 1; }
+
+      state.lkpdLogs.push({
+        id: `quiz_${Date.now()}`, mode: 'Latihan', category: q.category,
+        aksara: q.displayChar, latin: q.latinRef,
+        isi: isCorrect ? '100% (Leres)' : '0% (Salah)', rapi: '-', rapiNumeric: null,
+        waktu: `${durationSec}d`, durationSec, status: 'SELESAI'
+      });
+
+      renderLatihanUI();
+      updateHudUI();
+    }
+
+    function handleNextQuizQuestion() {
+      state.quizFeedback = null;
+      state.optionLocked = false;
+      state.quizQuestionStart = Date.now();
+
+      const qs = getFilteredQuestions();
+      if (state.quizIndex + 1 >= qs.length) state.quizSessionFinished = true;
+      else state.quizIndex += 1;
+      renderLatihanUI();
+      updateHudUI();
+    }
+
+    // =========================================================================
+    // MODE 3: RARANGKEN
+    // =========================================================================
+    function renderRarangkenUI(speak = true) {
+      const base = getCurrentRrBase();
+      const mark = getCurrentRrMark();
+      const res = mark.applyRule(base);
+
+      $('rr-base-char').textContent = base.char;
+      $('rr-base-name').textContent = base.name;
+      $('rr-base-latin').textContent = `Bunyi Awal: "${base.latin}"`;
+      $('rr-combined-char').textContent = res.combined;
+      $('rr-sound-change').textContent = `${base.latin} → ${res.latin}`;
+      $('rr-formula-text').textContent = `${base.char} + ${mark.displayWithDotted} = ${res.combined}`;
+      $('rr-mark-char').textContent = mark.displayWithDotted;
+      $('rr-mark-name').textContent = mark.name;
+      $('rr-mark-pos').textContent = mark.position;
+      $('rr-func-desc').textContent = `${mark.functionDesc}: `;
+      $('rr-explanation').textContent = res.explanation;
+
+      updateHudUI();
+      if (speak && !res.invalid && state.activeMode === 'RARANGKEN' && state.screen === 'LAB') {
+        speakPhoneticSunda(res.latin);
+      }
+    }
+
+    let rrBadgeTimeout = null;
+    function showRarangkenGestureBadge(text) {
+      $('rr-gesture-text').textContent = text;
+      showEl($('rr-gesture-badge'));
+      if (rrBadgeTimeout) clearTimeout(rrBadgeTimeout);
+      rrBadgeTimeout = setTimeout(() => hideEl($('rr-gesture-badge')), 1800);
+    }
+
+    // =========================================================================
+    // INTERAKSI JARI
+    // =========================================================================
+    function processFingerInteraction() {
+      updateFingerCursorUI();
+      if (!state.fingerPos) return;
+
+      const clientX = state.fingerPos.x * window.innerWidth;
+      const clientY = state.fingerPos.y * window.innerHeight;
+      const isHand = state.fingerPos.source === 'HAND';
+
+      // Pemilihan tombol dengan tangan (splash, menu, semua mode, modal)
+      if (isHand) gestureDwell(clientX, clientY);
+
+      if (state.screen !== 'LAB' || anyModalOpen()) return;
+
+      if (state.activeMode === 'SIMULASI') {
+        if (isHand || state.isPointerDown) processSimulasiTracePoint(clientX, clientY);
+      }
+
+      // Geser cepat di mode Rarangkén (tidak aktif saat telunjuk berada di atas tombol)
+      if (state.activeMode === 'RARANGKEN' && isHand) {
+        const now = performance.now();
+        if (gTargetAt(clientX, clientY)) { state.gestureHistory = []; return; }
+
+        state.gestureHistory.push({ x: state.fingerPos.x, y: state.fingerPos.y, t: now });
+        state.gestureHistory = state.gestureHistory.filter(p => now - p.t < 350);
+
+        if (now - state.lastGestureCooldown > 950 && state.gestureHistory.length >= 5) {
+          const first = state.gestureHistory[0];
+          const last = state.gestureHistory[state.gestureHistory.length - 1];
+          const dx = last.x - first.x;
+          const dy = last.y - first.y;
+          const threshold = 0.2;
+
+          if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > threshold) {
+            state.lastGestureCooldown = now;
+            state.gestureHistory = [];
+            if (dx > 0) {
+              state.rrBaseIndex = (state.rrBaseIndex + 1) % AKSARA_NGALAGENA.length;
+              showRarangkenGestureBadge('Geser kanan → aksara salajengna');
+            } else {
+              state.rrBaseIndex = (state.rrBaseIndex - 1 + AKSARA_NGALAGENA.length) % AKSARA_NGALAGENA.length;
+              showRarangkenGestureBadge('← Geser kiri: aksara saméméhna');
+            }
+            playBeep(540, 0.08, 'sine');
+            renderRarangkenUI(true);
+          } else if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > threshold) {
+            state.lastGestureCooldown = now;
+            state.gestureHistory = [];
+            if (dy < 0) {
+              state.rrMarkIndex = (state.rrMarkIndex - 1 + RARANGKEN_LIST.length) % RARANGKEN_LIST.length;
+              showRarangkenGestureBadge('↑ Geser luhur: ganti rarangkén');
+            } else {
+              state.rrMarkIndex = (state.rrMarkIndex + 1) % RARANGKEN_LIST.length;
+              showRarangkenGestureBadge('↓ Geser handap: ganti rarangkén');
+            }
+            playBeep(620, 0.08, 'sine');
+            renderRarangkenUI(true);
+          }
+        }
+      }
+    }
+
+    // =========================================================================
+    // KAMERA & MEDIAPIPE (aktif sejak splash agar tombol splash bisa digestur)
+    // =========================================================================
+    async function initCamera() {
+      if (state.cameraReq || state.cameraReady) return;
+      state.cameraReq = true;
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('NoMedia');
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+          audio: false
+        });
+        const videoEl = $('camera-video');
+        videoEl.srcObject = stream;
+        try { await videoEl.play(); } catch (e) {}
+        state.cameraReady = true;
+        state.cameraError = null;
+        initMediaPipeHands(videoEl);
+      } catch (err) {
+        state.cameraError = (err && err.name === 'NotAllowedError')
+          ? 'Izin kamera ditolak. Izinkan kamera di pengaturan browser, atau gunakan mouse/layar sentuh.'
+          : 'Kamera tidak ditemukan atau sedang dipakai aplikasi lain. Gunakan mouse/layar sentuh.';
+        state.cameraReq = false;
+        if (state.screen === 'LAB') showCameraBanner();
+      }
+      updateHudUI();
+    }
+
+    function showCameraBanner() {
+      if (!state.cameraError) return;
+      $('camera-error-text').textContent = state.cameraError;
+      showEl($('camera-error-banner'));
+    }
+
+    function resizeHudCanvas() {
+      const c = $('hud-canvas');
+      c.width = window.innerWidth;
+      c.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeHudCanvas);
+
+    function initMediaPipeHands(videoEl) {
+      if (!window.Hands) return;
+      const hands = new window.Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+      hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+
+      hands.onResults((results) => {
+        const list = (results && results.multiHandLandmarks) || [];
+        state.handsDetected = list.length;
+
+        const canvas = $('hud-canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (list.length > 0) {
+          const lms = list[0];
+          ctx.save();
+          ctx.strokeStyle = 'rgba(251, 191, 36, 0.35)';
+          ctx.lineWidth = 2;
+          HAND_CONNECTIONS.forEach(([i, j]) => {
+            ctx.beginPath();
+            ctx.moveTo((1 - lms[i].x) * canvas.width, lms[i].y * canvas.height);
+            ctx.lineTo((1 - lms[j].x) * canvas.width, lms[j].y * canvas.height);
+            ctx.stroke();
+          });
+          lms.forEach((lm, idx) => {
+            ctx.beginPath();
+            ctx.arc((1 - lm.x) * canvas.width, lm.y * canvas.height, idx === 8 ? 6 : 3, 0, Math.PI * 2);
+            ctx.fillStyle = idx === 8 ? '#fde68a' : 'rgba(251, 191, 36, 0.7)';
+            ctx.fill();
+          });
+          ctx.restore();
+
+          const tip = lms[8];
+          const mx = 1 - tip.x, my = tip.y;
+          const alpha = 0.42;
+          const prev = state.smoothedFinger;
+          const sx = prev.active ? prev.x * (1 - alpha) + mx * alpha : mx;
+          const sy = prev.active ? prev.y * (1 - alpha) + my * alpha : my;
+          state.smoothedFinger = { x: sx, y: sy, active: true };
+          state.fingerPos = { x: sx, y: sy, source: 'HAND' };
+          state.trailPoints.push({ x: sx * canvas.width, y: sy * canvas.height, t: performance.now() });
+          processFingerInteraction();
+        } else {
+          state.smoothedFinger.active = false;
+          if (state.fingerPos && state.fingerPos.source === 'HAND') {
+            state.fingerPos = null;
+            resetGestureEngine();
+            state.gestureHistory = [];
+            updateFingerCursorUI();
+          }
+        }
+
+        const now = performance.now();
+        state.trailPoints = state.trailPoints.filter(pt => now - pt.t < 500);
+        if (state.trailPoints.length > 1) {
+          ctx.save();
+          for (let i = 1; i < state.trailPoints.length; i++) {
+            const p0 = state.trailPoints[i - 1], p1 = state.trailPoints[i];
+            const age = (now - p1.t) / 500;
+            ctx.beginPath();
+            ctx.moveTo(p0.x, p0.y);
+            ctx.lineTo(p1.x, p1.y);
+            ctx.strokeStyle = `rgba(251, 191, 36, ${Math.max(0, 0.8 * (1 - age))})`;
+            ctx.lineWidth = 5 * (1 - age * 0.5);
+            ctx.lineCap = 'round';
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+        updateHudUI();
+      });
+
+      async function loop() {
+        if (videoEl.readyState >= 2 && !videoEl.paused) {
+          try { await hands.send({ image: videoEl }); } catch (e) {}
+        }
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+    }
+
+    // Timer 1 detik
+    setInterval(() => {
+      if (state.screen !== 'LAB') return;
+      if (state.activeMode === 'SIMULASI' && !state.simCompleted) {
+        state.simElapsedSec = Math.max(1, Math.floor((Date.now() - state.simStartTime) / 1000));
+        $('sim-item-time').textContent = `${state.simElapsedSec}d`;
+      } else if (state.activeMode === 'LATIHAN' && !state.quizSessionFinished) {
+        state.quizStats.elapsedSec += 1;
+        $('quiz-stat-time').textContent = `${state.quizStats.elapsedSec}d`;
+      }
+    }, 1000);
+
+    // =========================================================================
+    // MASUK LAB
+    // =========================================================================
+    function ensureFont() {
+      const load = (document.fonts && document.fonts.load)
+        ? document.fonts.load('600 100px "Noto Sans Sundanese"', 'ᮊ').catch(() => {})
+        : Promise.resolve();
+      return Promise.race([load, new Promise(r => setTimeout(r, 1500))]);
+    }
+
+    async function enterLab() {
+      if (state.screen === 'LAB') return;
+      state.screen = 'LAB';
+      document.body.dataset.screen = 'LAB';
+      resetGestureEngine();
+      hideEl($('splash-screen'));
+      showEl($('lab-screen'));
+      if (!state.cameraReady) { state.cameraReq = false; initCamera(); }
+      showCameraBanner();
+      resizeHudCanvas();
+      await ensureFont();
+      initSimulasiCanvas();
+      renderLatihanUI();
+      renderRarangkenUI(false);
+      updateHudUI();
+      triggerToast('Arahkan telunjuk ke tombol dan tahan sejenak untuk memilih.');
+    }
+
+    // =========================================================================
+    // LKPD
+    // =========================================================================
+    function getLkpdSummary() {
+      const total = state.lkpdLogs.length;
+      const completed = state.lkpdLogs.filter(l => l.status === 'SELESAI').length;
+      const skipped = state.lkpdLogs.filter(l => l.status === 'DILEWATI').length;
+      const withRapi = state.lkpdLogs.filter(l => typeof l.rapiNumeric === 'number');
+      const avgRapi = withRapi.length > 0
+        ? Math.round(withRapi.reduce((a, c) => a + c.rapiNumeric, 0) / withRapi.length) : null;
+      const totalSec = state.lkpdLogs.reduce((a, c) => a + (c.durationSec || 0), 0);
+      const accuracy = state.quizStats.answered > 0
+        ? Math.round((state.quizStats.correct / state.quizStats.answered) * 100) : 0;
+      return { total, completed, skipped, avgRapi, totalSec, accuracy };
+    }
+
+    function renderLkpdModal() {
+      const sum = getLkpdSummary();
+      $('lkpd-sum-total').textContent = sum.total;
+      $('lkpd-sum-completed').textContent = sum.completed;
+      $('lkpd-sum-skipped').textContent = sum.skipped;
+      $('lkpd-sum-accuracy').textContent = `${sum.accuracy}%`;
+      $('lkpd-sum-rapi').textContent = sum.avgRapi !== null ? `${sum.avgRapi}%` : '-';
+      $('lkpd-sum-time').textContent = `${sum.totalSec}d`;
+
+      const tbody = $('lkpd-tbody');
+      tbody.innerHTML = '';
+      if (state.lkpdLogs.length === 0) {
+        showEl($('lkpd-empty-state'));
+        hideEl($('lkpd-table'));
+      } else {
+        hideEl($('lkpd-empty-state'));
+        showEl($('lkpd-table'));
+        state.lkpdLogs.forEach(row => {
+          const tr = document.createElement('tr');
+          tr.style.borderBottom = '1px solid rgba(255,255,255,.06)';
+          tr.innerHTML = `
+            <td class="sunda" style="padding:.55rem .6rem;font-size:1.3rem;color:#fde68a;font-weight:700;">${row.aksara}</td>
+            <td style="padding:.55rem .6rem;">${row.latin}</td>
+            <td style="padding:.55rem .6rem;color:var(--accent);">${row.isi}</td>
+            <td style="padding:.55rem .6rem;color:var(--ok);">${row.rapi}</td>
+            <td style="padding:.55rem .6rem;color:var(--mute);">${row.waktu}</td>
+            <td style="padding:.55rem .6rem;color:var(--mute);font-size:.75rem;">${row.mode} (${row.category})</td>`;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    function openLkpd() {
+      renderLkpdModal();
+      showEl($('modal-lkpd'));
+    }
+
+    function copyLkpdToClipboard() {
+      const sum = getLkpdSummary();
+      const rows = state.lkpdLogs.map(i => [i.aksara, i.latin, i.isi, i.rapi, i.waktu]);
+      const tsv = [
+        `LAPORAN LATIHAN DIRAKSA AR - ${new Date().toLocaleDateString('id-ID')}`,
+        `Total Aktivitas: ${sum.total} | Selesai: ${sum.completed} | Dilewati: ${sum.skipped} | Akurasi Latihan: ${sum.accuracy}% | Rata-rata Rapi Simulasi: ${sum.avgRapi !== null ? sum.avgRapi + '%' : '-'}`,
+        '',
+        ['Aksara', 'Latin', 'Isi', 'Rapi', 'Waktu'].join('\t'),
+        ...rows.map(r => r.join('\t'))
+      ].join('\n');
+
+      const ta = document.createElement('textarea');
+      ta.value = tsv;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        triggerToast('Tabel laporan disalin ke clipboard.');
+      } catch (err) {
+        triggerToast('Gagal menyalin otomatis. Gunakan tombol Excel.');
+      }
+      document.body.removeChild(ta);
+    }
+
+    function exportLkpdExcel() {
+      const sum = getLkpdSummary();
+      const dateStr = new Date().toISOString().slice(0, 10);
+      if (window.XLSX) {
+        const wsData = [
+          ['LAPORAN LATIHAN DIRAKSA AR — SIMULATOR NULIS AKSARA SUNDA'],
+          ['Mata Pelajaran: Bahasa Sunda | Jenjang: SMA/MA Fase E'],
+          ['Pengembang: Farhan Mustaqim'],
+          [`Tanggal Sesi: ${new Date().toLocaleString('id-ID')}`],
+          [],
+          ['RINGKASAN SESI'],
+          ['Total Aktivitas', sum.total, 'Skor Latihan', `${state.quizStats.score} (${sum.accuracy}%)`],
+          ['Total Selesai', sum.completed, 'Rata-rata Kerapihan (Simulasi)', sum.avgRapi !== null ? `${sum.avgRapi}%` : '-'],
+          ['Total Dilewati', sum.skipped, 'Total Waktu Belajar', `${sum.totalSec} detik`],
+          [],
+          ['Aksara', 'Latin', 'Isi', 'Rapi', 'Waktu', 'Mode', 'Kategori', 'Status'],
+          ...state.lkpdLogs.map(i => [i.aksara, i.latin, i.isi, i.rapi, i.waktu, i.mode, i.category, i.status])
+        ];
+        const wb = window.XLSX.utils.book_new();
+        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(wsData), 'Laporan_LKPD');
+        window.XLSX.writeFile(wb, `LKPD_DIRAKSA_AR_${dateStr}.xlsx`);
+        triggerToast('Berkas Excel (.xlsx) diunduh.');
+        return;
+      }
+      const csvRows = [
+        ['LAPORAN LATIHAN DIRAKSA AR - SIMULATOR NULIS AKSARA SUNDA'],
+        ['Aksara', 'Latin', 'Isi', 'Rapi', 'Waktu'],
+        ...state.lkpdLogs.map(i => [`"${i.aksara}"`, `"${i.latin}"`, `"${i.isi}"`, `"${i.rapi}"`, `"${i.waktu}"`])
+      ];
+      const blob = new Blob(['\uFEFF' + csvRows.map(r => r.join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `LKPD_DIRAKSA_AR_${dateStr}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      triggerToast('Berkas CSV diunduh.');
+    }
+
+    // =========================================================================
+    // NAVIGASI & KONTROL
+    // =========================================================================
+    $('btn-start-lab').addEventListener('click', enterLab);
+
+    function setMode(mode) {
+      state.activeMode = mode;
+      state.quizFeedback = null;
+      state.optionLocked = false;
+      state.gestureHistory = [];
+
+      document.querySelectorAll('.mode-btn').forEach(b => {
+        b.classList.toggle('on', b.getAttribute('data-mode') === mode);
+      });
+      $('view-simulasi').classList.toggle('hide', mode !== 'SIMULASI');
+      $('view-latihan').classList.toggle('hide', mode !== 'LATIHAN');
+      $('view-rarangken').classList.toggle('hide', mode !== 'RARANGKEN');
+
+      if (mode === 'SIMULASI') initSimulasiCanvas();
+      if (mode === 'LATIHAN') { state.quizQuestionStart = Date.now(); renderLatihanUI(); }
+      if (mode === 'RARANGKEN') renderRarangkenUI(true);
+      updateHudUI();
+    }
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => setMode(btn.getAttribute('data-mode')));
+    });
+
+    document.querySelectorAll('.cat-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.category = btn.getAttribute('data-cat');
+        state.simIndex = 0;
+        state.quizIndex = 0;
+        state.quizFeedback = null;
+        state.quizSessionFinished = false;
+        state.optionLocked = false;
+        state.quizQuestionStart = Date.now();
+
+        document.querySelectorAll('.cat-btn').forEach(b => {
+          b.classList.toggle('on', b === btn);
+        });
+        if (state.activeMode === 'SIMULASI') initSimulasiCanvas();
+        if (state.activeMode === 'LATIHAN') renderLatihanUI();
+        updateHudUI();
+      });
+    });
+
+    // Satu tombol ikon: Lewati / Berikutnya
+    function handleNextOrSkip() {
+      if (state.activeMode === 'SIMULASI') {
+        if (!state.simRecorded) {
+          const item = getCurrentSimItem();
+          const durationSec = Math.max(1, Math.floor((Date.now() - state.simStartTime) / 1000));
+          state.lkpdLogs.push({
+            id: `sim_skip_${Date.now()}`, mode: 'Simulasi', category: item.category,
+            aksara: item.char, latin: item.latin, isi: `${state.simIsi}% (Dilewati)`,
+            rapi: '-', rapiNumeric: null, waktu: `${durationSec}d`, durationSec, status: 'DILEWATI'
+          });
+        }
+        goNextSim();
+      } else if (state.activeMode === 'LATIHAN') {
+        if (state.quizSessionFinished) return;
+        if (state.quizFeedback) { handleNextQuizQuestion(); return; }
+        const q = getCurrentQuestion();
+        const durationSec = Math.max(1, Math.floor((Date.now() - state.quizQuestionStart) / 1000));
+        state.lkpdLogs.push({
+          id: `quiz_skip_${Date.now()}`, mode: 'Latihan', category: q.category,
+          aksara: q.displayChar, latin: q.latinRef, isi: 'Dilewati',
+          rapi: '-', rapiNumeric: null, waktu: `${durationSec}d`, durationSec, status: 'DILEWATI'
+        });
+        handleNextQuizQuestion();
+      } else if (state.activeMode === 'RARANGKEN') {
+        const res = getCurrentRrMark().applyRule(getCurrentRrBase());
+        if (!res.invalid) {
+          state.lkpdLogs.push({
+            id: `rr_${Date.now()}`, mode: 'Rarangken', category: 'RARANGKEN',
+            aksara: res.combined, latin: res.latin, isi: '100%', rapi: '-', rapiNumeric: null,
+            waktu: 'Eksplorasi', durationSec: 5, status: 'SELESAI'
+          });
+        }
+        state.rrBaseIndex = (state.rrBaseIndex + 1) % AKSARA_NGALAGENA.length;
+        renderRarangkenUI(true);
+      }
+      updateHudUI();
+    }
+    $('btn-next').addEventListener('click', handleNextOrSkip);
+
+    // Simulasi
+    $('btn-sim-retry').addEventListener('click', initSimulasiCanvas);
+    $('btn-sim-next-overlay').addEventListener('click', goNextSim);
+
+    // Latihan
+    $('btn-quiz-next-question').addEventListener('click', handleNextQuizQuestion);
+    $('btn-quiz-restart').addEventListener('click', () => {
+      state.quizIndex = 0;
+      state.quizSessionFinished = false;
+      state.quizFeedback = null;
+      state.optionLocked = false;
+      state.quizQuestionStart = Date.now();
+      renderLatihanUI();
+    });
+    $('btn-quiz-open-lkpd').addEventListener('click', openLkpd);
+
+    // Rarangkén
+    $('btn-rr-base-prev').addEventListener('click', () => {
+      state.rrBaseIndex = (state.rrBaseIndex - 1 + AKSARA_NGALAGENA.length) % AKSARA_NGALAGENA.length;
+      renderRarangkenUI(true);
+    });
+    $('btn-rr-base-next').addEventListener('click', () => {
+      state.rrBaseIndex = (state.rrBaseIndex + 1) % AKSARA_NGALAGENA.length;
+      renderRarangkenUI(true);
+    });
+    $('btn-rr-mark-prev').addEventListener('click', () => {
+      state.rrMarkIndex = (state.rrMarkIndex - 1 + RARANGKEN_LIST.length) % RARANGKEN_LIST.length;
+      renderRarangkenUI(true);
+    });
+    $('btn-rr-mark-next').addEventListener('click', () => {
+      state.rrMarkIndex = (state.rrMarkIndex + 1) % RARANGKEN_LIST.length;
+      renderRarangkenUI(true);
+    });
+    $('btn-rr-random').addEventListener('click', () => {
+      state.rrBaseIndex = Math.floor(Math.random() * 18);
+      state.rrMarkIndex = Math.floor(Math.random() * RARANGKEN_LIST.length);
+      renderRarangkenUI(true);
+    });
+    $('btn-rr-reset').addEventListener('click', () => {
+      state.rrBaseIndex = 0;
+      state.rrMarkIndex = 0;
+      renderRarangkenUI(true);
+    });
+
+    // Suara & layar penuh
+    $('btn-sound').addEventListener('click', () => {
+      state.soundEnabled = !state.soundEnabled;
+      $('btn-sound').classList.toggle('off', !state.soundEnabled);
+      $('icon-sound-on').classList.toggle('hide', !state.soundEnabled);
+      $('icon-sound-off').classList.toggle('hide', state.soundEnabled);
+      if (!state.soundEnabled && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+    });
+    $('btn-fullscreen').addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+        if (p && p.catch) p.catch(() => {});
+      } else if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    });
+
+    // Modal
+    const bindShow = (btnId, modalId) => $(btnId).addEventListener('click', () => showEl($(modalId)));
+    const bindHide = (btnId, modalId) => $(btnId).addEventListener('click', () => hideEl($(modalId)));
+
+    bindShow('btn-splash-guide', 'modal-guide');
+    bindShow('btn-open-guide', 'modal-guide');
+    bindShow('btn-error-guide', 'modal-guide');
+    bindHide('btn-close-guide-top', 'modal-guide');
+    bindHide('btn-close-guide-bottom', 'modal-guide');
+
+    bindShow('btn-splash-about', 'modal-about');
+    bindHide('btn-close-about-top', 'modal-about');
+    bindHide('btn-close-about-bottom', 'modal-about');
+
+    $('btn-open-lkpd').addEventListener('click', openLkpd);
+    bindHide('btn-close-lkpd-top', 'modal-lkpd');
+    bindHide('btn-close-lkpd-bottom', 'modal-lkpd');
+    $('btn-lkpd-copy').addEventListener('click', copyLkpdToClipboard);
+    $('btn-lkpd-excel').addEventListener('click', exportLkpdExcel);
+
+    const openResetModal = () => {
+      $('reset-log-count').textContent = `${state.lkpdLogs.length} catatan aktivitas`;
+      showEl($('modal-reset'));
+    };
+    $('btn-open-reset').addEventListener('click', openResetModal);
+    $('btn-lkpd-reset').addEventListener('click', openResetModal);
+    bindHide('btn-cancel-reset', 'modal-reset');
+    $('btn-reset-export-first').addEventListener('click', exportLkpdExcel);
+    $('btn-confirm-reset').addEventListener('click', () => {
+      state.lkpdLogs = [];
+      state.quizStats = { answered: 0, correct: 0, wrong: 0, score: 0, elapsedSec: 0 };
+      state.quizIndex = 0;
+      state.quizFeedback = null;
+      state.optionLocked = false;
+      state.quizSessionFinished = false;
+      state.quizQuestionStart = Date.now();
+      state.simIndex = 0;
+      initSimulasiCanvas();
+      renderLatihanUI();
+      updateHudUI();
+      hideEl($('modal-reset'));
+      hideEl($('modal-lkpd'));
+      triggerToast('Data sesi direset. Siap memulai latihan baru!');
+    });
+
+    // Mouse / sentuh sebagai cadangan menulis di mode Simulasi
+    const labEl = $('lab-screen');
+    labEl.addEventListener('pointerdown', (e) => {
+      state.isPointerDown = true;
+      if (state.handsDetected === 0) {
+        state.fingerPos = { x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight, source: 'POINTER' };
+        processFingerInteraction();
+      }
+    });
+    labEl.addEventListener('pointermove', (e) => {
+      if (state.handsDetected === 0 && state.isPointerDown) {
+        state.fingerPos = { x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight, source: 'POINTER' };
+        processFingerInteraction();
+      }
+    });
+    window.addEventListener('pointerup', () => { state.isPointerDown = false; });
+
+    // Mulai: kamera aktif sejak splash
+    resizeHudCanvas();
+    updateHudUI();
+    initCamera();
+  </script>
+</body>
+</html>
